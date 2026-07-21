@@ -1,0 +1,184 @@
+<!--
+  SoundsGood: адаптивный блок главной страницы для Хорошоп.
+  Вставлять как HTML-контент без тегов <!DOCTYPE>, <html>, <head>, <body>.
+  Стили находятся в отдельном файле soundsgood-horoshop-client.css.
+-->
+
+<div class="sg-home" aria-label="Головна сторінка SoundsGood">
+  <section class="sg-hero">
+    <div class="sg-hero__content">
+      <p class="sg-eyebrow">Музичні інструменти та професійне обладнання</p>
+      <h1 class="sg-hero__title">Все для музики, сцени, студії та інсталяцій</h1>
+      <p class="sg-hero__text">
+        Гітари, духові, струнні, клавішні та ударні інструменти. Професійний звук,
+        DJ-обладнання, аксесуари, сервіс і рішення для державних закупівель.
+      </p>
+      <div class="sg-hero__actions">
+        <a class="sg-btn sg-btn--primary" href="/katalog/">Перейти до каталогу</a>
+        <a class="sg-btn sg-btn--secondary" href="/tendery/">Тендери та Prozorro</a>
+      </div>
+    </div>
+
+    <div class="sg-hero__visual" aria-hidden="true">
+      <div class="sg-hero__disc sg-hero__disc--one"></div>
+      <div class="sg-hero__disc sg-hero__disc--two"></div>
+      <div class="sg-hero__panel">
+        <span class="sg-hero__brand">SoundsGood</span>
+        <strong>Music. Sound. Stage.</strong>
+        <span>Офіційна гарантія та професійна консультація</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sg-benefits" aria-label="Переваги SoundsGood">
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">4 000 ₴</span>
+      <span class="sg-benefit__title">Безкоштовна доставка</span>
+      <span class="sg-benefit__text">для замовлень від 4 000 грн</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">0%</span>
+      <span class="sg-benefit__title">Оплата частинами</span>
+      <span class="sg-benefit__text">PrivatBank та monobank</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">100%</span>
+      <span class="sg-benefit__title">Офіційна гарантія</span>
+      <span class="sg-benefit__text">товари від офіційних постачальників</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">Київ</span>
+      <span class="sg-benefit__title">Шоурум і сервіс</span>
+      <span class="sg-benefit__text">консультація та ремонт духових</span>
+    </article>
+  </section>
+
+  <section class="sg-section" aria-labelledby="sg-categories-title">
+    <div class="sg-section__head">
+      <div>
+        <p class="sg-eyebrow">Каталог SoundsGood</p>
+        <h2 class="sg-section__title" id="sg-categories-title">Популярні категорії</h2>
+      </div>
+      <a class="sg-text-link" href="/katalog/">Весь каталог <span aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="sg-categories">
+      <a class="sg-category" href="/zvukove-obladnannia/">
+        <span class="sg-category__code">PA</span>
+        <span class="sg-category__body">
+          <strong>Звукове обладнання</strong>
+          <small>Акустичні системи, мікшери, мікрофони, студійне обладнання</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/hitary/">
+        <span class="sg-category__code">GT</span>
+        <span class="sg-category__body">
+          <strong>Гітари</strong>
+          <small>Електрогітари, акустичні, класичні та бас-гітари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/hitarne-obladnannia/">
+        <span class="sg-category__code">FX</span>
+        <span class="sg-category__body">
+          <strong>Гітарне обладнання</strong>
+          <small>Комбопідсилювачі, ефекти, струни, кейси та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/dj-obladnannia/">
+        <span class="sg-category__code">DJ</span>
+        <span class="sg-category__body">
+          <strong>DJ-обладнання</strong>
+          <small>Контролери, мікшери, програвачі та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/dukhovye/">
+        <span class="sg-category__code">BR</span>
+        <span class="sg-category__body">
+          <strong>Духові інструменти</strong>
+          <small>Саксофони, труби, тромбони, кларнети, флейти та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/strunni-instrumenty/">
+        <span class="sg-category__code">ST</span>
+        <span class="sg-category__body">
+          <strong>Струнні інструменти</strong>
+          <small>Скрипки, альти, віолончелі, струни, смички та каніфоль</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/klavishni-instrumenty/">
+        <span class="sg-category__code">KY</span>
+        <span class="sg-category__body">
+          <strong>Клавішні інструменти</strong>
+          <small>Синтезатори, цифрові піаніно, MIDI-клавіатури та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/udarni-instrumenty/">
+        <span class="sg-category__code">DR</span>
+        <span class="sg-category__body">
+          <strong>Ударні інструменти</strong>
+          <small>Установки, тарілки, перкусія, палички та комплектуючі</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="sg-feature-grid" aria-label="Послуги SoundsGood">
+    <article class="sg-feature sg-feature--service">
+      <p class="sg-eyebrow">SoundsGood Services</p>
+      <h2>Ремонт духових інструментів</h2>
+      <p>
+        Діагностика, профілактика та професійний ремонт саксофонів, труб,
+        кларнетів, флейт та інших духових інструментів.
+      </p>
+      <a class="sg-btn sg-btn--light" href="/soundsgood-services/2576/">Детальніше про сервіс</a>
+    </article>
+
+    <article class="sg-feature sg-feature--tenders">
+      <p class="sg-eyebrow">Для організацій та установ</p>
+      <h2>Комерційні й державні закупівлі</h2>
+      <p>
+        Підбір обладнання, підготовка специфікацій і комерційних пропозицій,
+        участь у тендерах та постачання через Prozorro.
+      </p>
+      <a class="sg-btn sg-btn--dark" href="/tendery/">Перейти до тендерів</a>
+    </article>
+  </section>
+
+  <section class="sg-about" aria-labelledby="sg-about-title">
+    <div class="sg-about__main">
+      <p class="sg-eyebrow">Про SoundsGood</p>
+      <h2 id="sg-about-title">Професійний музичний магазин з експертною підтримкою</h2>
+      <p>
+        Допомагаємо підібрати інструменти та обладнання для музикантів,
+        навчальних закладів, студій, концертних майданчиків, церков,
+        державних установ і системних інтеграторів.
+      </p>
+      <a class="sg-text-link" href="/pro-nas/">Дізнатися більше про магазин <span aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="sg-about__list">
+      <div><strong>Професійна консультація</strong><span>Підбір під завдання та бюджет</span></div>
+      <div><strong>Офіційні бренди</strong><span>Гарантія та сервісна підтримка</span></div>
+      <div><strong>Доставка по Україні</strong><span>Нова пошта та адресна доставка</span></div>
+      <div><strong>Зручна оплата</strong><span>Картка, переказ, оплата частинами</span></div>
+    </div>
+  </section>
+</div>

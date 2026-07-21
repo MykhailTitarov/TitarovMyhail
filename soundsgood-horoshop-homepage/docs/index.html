@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>SoundsGood — Horoshop homepage preview</title>
+  <style>
+    body { margin: 0; background: #fff; font-family: Arial, Helvetica, sans-serif; }
+/* SoundsGood homepage block for Horoshop. All selectors are namespaced with sg-. */
+
+.sg-home,
+.sg-home * {
+  box-sizing: border-box;
+}
+
+.sg-home {
+  --sg-bg: #f5f7f8;
+  --sg-card: #ffffff;
+  --sg-dark: #101820;
+  --sg-text: #18222b;
+  --sg-muted: #66737d;
+  --sg-line: #dfe5e8;
+  --sg-accent: #00a6c8;
+  --sg-accent-dark: #007f9a;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 16px 56px;
+  color: var(--sg-text);
+  font-family: inherit;
+}
+
+.sg-home a {
+  text-decoration: none;
+}
+
+.sg-home a:focus-visible {
+  outline: 3px solid var(--sg-accent);
+  outline-offset: 3px;
+}
+
+.sg-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  min-height: 460px;
+  overflow: hidden;
+  border-radius: 24px;
+  background: var(--sg-dark);
+  color: #fff;
+}
+
+.sg-hero__content {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  padding: 64px;
+}
+
+.sg-eyebrow {
+  margin: 0 0 12px;
+  color: var(--sg-accent);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.sg-hero__title {
+  max-width: 780px;
+  margin: 0;
+  color: #fff;
+  font-size: clamp(36px, 5vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+}
+
+.sg-hero__text {
+  max-width: 700px;
+  margin: 24px 0 0;
+  color: #d7e0e4;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.sg-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.sg-btn {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 22px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.sg-btn:hover {
+  transform: translateY(-2px);
+}
+
+.sg-btn--primary {
+  background: var(--sg-accent);
+  color: #04181d !important;
+}
+
+.sg-btn--primary:hover {
+  background: #25c0dc;
+}
+
+.sg-btn--secondary {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff !important;
+}
+
+.sg-btn--secondary:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sg-hero__visual {
+  position: relative;
+  min-height: 460px;
+  background:
+    radial-gradient(circle at 75% 25%, rgba(0, 166, 200, 0.32), transparent 34%),
+    linear-gradient(135deg, #111b24 0%, #202d37 100%);
+}
+
+.sg-hero__disc {
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 50%;
+}
+
+.sg-hero__disc--one {
+  top: -70px;
+  right: -40px;
+  width: 360px;
+  height: 360px;
+  background: radial-gradient(circle, rgba(0, 166, 200, 0.14), transparent 68%);
+}
+
+.sg-hero__disc--two {
+  right: 145px;
+  bottom: -160px;
+  width: 420px;
+  height: 420px;
+}
+
+.sg-hero__panel {
+  position: absolute;
+  right: 42px;
+  bottom: 42px;
+  left: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  background: rgba(9, 19, 27, 0.72);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
+}
+
+.sg-hero__panel strong {
+  color: #fff;
+  font-size: clamp(26px, 3vw, 42px);
+  letter-spacing: -0.03em;
+}
+
+.sg-hero__panel > span:last-child {
+  color: #c8d2d7;
+  line-height: 1.5;
+}
+
+.sg-hero__brand {
+  color: var(--sg-accent);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sg-benefits {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid var(--sg-line);
+  border-radius: 18px;
+  background: var(--sg-line);
+}
+
+.sg-benefit {
+  display: flex;
+  min-height: 138px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px;
+  background: var(--sg-card);
+}
+
+.sg-benefit__number {
+  color: var(--sg-accent-dark);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.sg-benefit__title {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.sg-benefit__text {
+  margin-top: 4px;
+  color: var(--sg-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.sg-section {
+  padding-top: 72px;
+}
+
+.sg-section__head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.sg-section__title,
+.sg-feature h2,
+.sg-about h2 {
+  margin: 0;
+  color: var(--sg-text);
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.sg-text-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--sg-accent-dark) !important;
+  font-weight: 800;
+}
+
+.sg-text-link:hover {
+  text-decoration: underline;
+}
+
+.sg-categories {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.sg-category {
+  position: relative;
+  display: grid;
+  min-height: 190px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 18px;
+  align-content: start;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid var(--sg-line);
+  border-radius: 18px;
+  background: var(--sg-card);
+  color: var(--sg-text) !important;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sg-category:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 166, 200, 0.55);
+  box-shadow: 0 18px 36px rgba(16, 24, 32, 0.09);
+}
+
+.sg-category__code {
+  display: inline-flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  background: #e6f8fb;
+  color: var(--sg-accent-dark);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.sg-category__body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sg-category__body strong {
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.sg-category__body small {
+  color: var(--sg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sg-category__arrow {
+  position: absolute;
+  right: 20px;
+  bottom: 18px;
+  color: var(--sg-accent-dark);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.sg-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding-top: 72px;
+}
+
+.sg-feature {
+  min-height: 360px;
+  padding: 44px;
+  border-radius: 22px;
+}
+
+.sg-feature p:not(.sg-eyebrow) {
+  max-width: 620px;
+  margin: 20px 0 28px;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.sg-feature--service {
+  background: #dff6fa;
+}
+
+.sg-feature--tenders {
+  background: var(--sg-dark);
+  color: #d7e0e4;
+}
+
+.sg-feature--tenders h2 {
+  color: #fff;
+}
+
+.sg-btn--light {
+  background: #fff;
+  color: var(--sg-text) !important;
+}
+
+.sg-btn--dark {
+  background: var(--sg-accent);
+  color: #04181d !important;
+}
+
+.sg-about {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  gap: 54px;
+  align-items: center;
+  margin-top: 72px;
+  padding: 56px;
+  border: 1px solid var(--sg-line);
+  border-radius: 22px;
+  background: var(--sg-bg);
+}
+
+.sg-about__main > p:not(.sg-eyebrow) {
+  max-width: 760px;
+  margin: 22px 0 26px;
+  color: var(--sg-muted);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.sg-about__list {
+  display: grid;
+  gap: 12px;
+}
+
+.sg-about__list div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 18px 20px;
+  border: 1px solid var(--sg-line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sg-about__list strong {
+  font-size: 16px;
+}
+
+.sg-about__list span {
+  color: var(--sg-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 1100px) {
+  .sg-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .sg-hero__visual {
+    min-height: 300px;
+  }
+
+  .sg-benefits,
+  .sg-categories {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sg-about {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .sg-home {
+    padding: 12px 10px 40px;
+  }
+
+  .sg-hero {
+    min-height: auto;
+    border-radius: 18px;
+  }
+
+  .sg-hero__content {
+    padding: 36px 24px 28px;
+  }
+
+  .sg-hero__text {
+    font-size: 16px;
+  }
+
+  .sg-hero__actions,
+  .sg-btn {
+    width: 100%;
+  }
+
+  .sg-hero__visual {
+    min-height: 250px;
+  }
+
+  .sg-hero__panel {
+    right: 20px;
+    bottom: 20px;
+    left: 20px;
+    padding: 22px;
+  }
+
+  .sg-benefits,
+  .sg-categories,
+  .sg-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sg-benefit {
+    min-height: 116px;
+  }
+
+  .sg-section,
+  .sg-feature-grid {
+    padding-top: 48px;
+  }
+
+  .sg-section__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sg-category {
+    min-height: 156px;
+  }
+
+  .sg-feature {
+    min-height: auto;
+    padding: 30px 24px;
+  }
+
+  .sg-about {
+    gap: 32px;
+    margin-top: 48px;
+    padding: 30px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg-btn,
+  .sg-category {
+    transition: none;
+  }
+
+  .sg-btn:hover,
+  .sg-category:hover {
+    transform: none;
+  }
+}
+
+  </style>
+</head>
+<body>
+<!--
+  SoundsGood: адаптивный блок главной страницы для Хорошоп.
+  Вставлять как HTML-контент без тегов <!DOCTYPE>, <html>, <head>, <body>.
+  Стили находятся в отдельном файле soundsgood-horoshop-client.css.
+-->
+
+<div class="sg-home" aria-label="Головна сторінка SoundsGood">
+  <section class="sg-hero">
+    <div class="sg-hero__content">
+      <p class="sg-eyebrow">Музичні інструменти та професійне обладнання</p>
+      <h1 class="sg-hero__title">Все для музики, сцени, студії та інсталяцій</h1>
+      <p class="sg-hero__text">
+        Гітари, духові, струнні, клавішні та ударні інструменти. Професійний звук,
+        DJ-обладнання, аксесуари, сервіс і рішення для державних закупівель.
+      </p>
+      <div class="sg-hero__actions">
+        <a class="sg-btn sg-btn--primary" href="/katalog/">Перейти до каталогу</a>
+        <a class="sg-btn sg-btn--secondary" href="/tendery/">Тендери та Prozorro</a>
+      </div>
+    </div>
+
+    <div class="sg-hero__visual" aria-hidden="true">
+      <div class="sg-hero__disc sg-hero__disc--one"></div>
+      <div class="sg-hero__disc sg-hero__disc--two"></div>
+      <div class="sg-hero__panel">
+        <span class="sg-hero__brand">SoundsGood</span>
+        <strong>Music. Sound. Stage.</strong>
+        <span>Офіційна гарантія та професійна консультація</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sg-benefits" aria-label="Переваги SoundsGood">
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">4 000 ₴</span>
+      <span class="sg-benefit__title">Безкоштовна доставка</span>
+      <span class="sg-benefit__text">для замовлень від 4 000 грн</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">0%</span>
+      <span class="sg-benefit__title">Оплата частинами</span>
+      <span class="sg-benefit__text">PrivatBank та monobank</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">100%</span>
+      <span class="sg-benefit__title">Офіційна гарантія</span>
+      <span class="sg-benefit__text">товари від офіційних постачальників</span>
+    </article>
+
+    <article class="sg-benefit">
+      <span class="sg-benefit__number">Київ</span>
+      <span class="sg-benefit__title">Шоурум і сервіс</span>
+      <span class="sg-benefit__text">консультація та ремонт духових</span>
+    </article>
+  </section>
+
+  <section class="sg-section" aria-labelledby="sg-categories-title">
+    <div class="sg-section__head">
+      <div>
+        <p class="sg-eyebrow">Каталог SoundsGood</p>
+        <h2 class="sg-section__title" id="sg-categories-title">Популярні категорії</h2>
+      </div>
+      <a class="sg-text-link" href="/katalog/">Весь каталог <span aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="sg-categories">
+      <a class="sg-category" href="/zvukove-obladnannia/">
+        <span class="sg-category__code">PA</span>
+        <span class="sg-category__body">
+          <strong>Звукове обладнання</strong>
+          <small>Акустичні системи, мікшери, мікрофони, студійне обладнання</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/hitary/">
+        <span class="sg-category__code">GT</span>
+        <span class="sg-category__body">
+          <strong>Гітари</strong>
+          <small>Електрогітари, акустичні, класичні та бас-гітари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/hitarne-obladnannia/">
+        <span class="sg-category__code">FX</span>
+        <span class="sg-category__body">
+          <strong>Гітарне обладнання</strong>
+          <small>Комбопідсилювачі, ефекти, струни, кейси та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/dj-obladnannia/">
+        <span class="sg-category__code">DJ</span>
+        <span class="sg-category__body">
+          <strong>DJ-обладнання</strong>
+          <small>Контролери, мікшери, програвачі та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/dukhovye/">
+        <span class="sg-category__code">BR</span>
+        <span class="sg-category__body">
+          <strong>Духові інструменти</strong>
+          <small>Саксофони, труби, тромбони, кларнети, флейти та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/strunni-instrumenty/">
+        <span class="sg-category__code">ST</span>
+        <span class="sg-category__body">
+          <strong>Струнні інструменти</strong>
+          <small>Скрипки, альти, віолончелі, струни, смички та каніфоль</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/klavishni-instrumenty/">
+        <span class="sg-category__code">KY</span>
+        <span class="sg-category__body">
+          <strong>Клавішні інструменти</strong>
+          <small>Синтезатори, цифрові піаніно, MIDI-клавіатури та аксесуари</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="sg-category" href="/udarni-instrumenty/">
+        <span class="sg-category__code">DR</span>
+        <span class="sg-category__body">
+          <strong>Ударні інструменти</strong>
+          <small>Установки, тарілки, перкусія, палички та комплектуючі</small>
+        </span>
+        <span class="sg-category__arrow" aria-hidden="true">→</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="sg-feature-grid" aria-label="Послуги SoundsGood">
+    <article class="sg-feature sg-feature--service">
+      <p class="sg-eyebrow">SoundsGood Services</p>
+      <h2>Ремонт духових інструментів</h2>
+      <p>
+        Діагностика, профілактика та професійний ремонт саксофонів, труб,
+        кларнетів, флейт та інших духових інструментів.
+      </p>
+      <a class="sg-btn sg-btn--light" href="/soundsgood-services/2576/">Детальніше про сервіс</a>
+    </article>
+
+    <article class="sg-feature sg-feature--tenders">
+      <p class="sg-eyebrow">Для організацій та установ</p>
+      <h2>Комерційні й державні закупівлі</h2>
+      <p>
+        Підбір обладнання, підготовка специфікацій і комерційних пропозицій,
+        участь у тендерах та постачання через Prozorro.
+      </p>
+      <a class="sg-btn sg-btn--dark" href="/tendery/">Перейти до тендерів</a>
+    </article>
+  </section>
+
+  <section class="sg-about" aria-labelledby="sg-about-title">
+    <div class="sg-about__main">
+      <p class="sg-eyebrow">Про SoundsGood</p>
+      <h2 id="sg-about-title">Професійний музичний магазин з експертною підтримкою</h2>
+      <p>
+        Допомагаємо підібрати інструменти та обладнання для музикантів,
+        навчальних закладів, студій, концертних майданчиків, церков,
+        державних установ і системних інтеграторів.
+      </p>
+      <a class="sg-text-link" href="/pro-nas/">Дізнатися більше про магазин <span aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="sg-about__list">
+      <div><strong>Професійна консультація</strong><span>Підбір під завдання та бюджет</span></div>
+      <div><strong>Офіційні бренди</strong><span>Гарантія та сервісна підтримка</span></div>
+      <div><strong>Доставка по Україні</strong><span>Нова пошта та адресна доставка</span></div>
+      <div><strong>Зручна оплата</strong><span>Картка, переказ, оплата частинами</span></div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>
