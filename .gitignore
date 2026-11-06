@@ -1,0 +1,4 @@
+__pycache__/
+.pytest_cache/
+.product_names_cache.json
+*.pyc
