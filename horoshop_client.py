@@ -105,26 +105,84 @@ class CategoryTree:
 
     @classmethod
     def from_pages(cls, pages: Iterable[dict[str, Any]]) -> "CategoryTree":
+        """Строит дерево из списка разделов. Понимает ключи parent (Хорошоп) и parentId."""
         cats = []
         for p in pages:
             title = p.get("title", "")
+            parent = p.get("parent") if "parent" in p else p.get("parentId")
             cats.append(
                 Category(
                     id=int(p["id"]),
-                    parent=int(p.get("parent") or 0),
+                    parent=int(parent or 0),
                     title_ua=cls._title(title, "ua"),
                     title_ru=cls._title(title, "ru"),
-                    extra={k: v for k, v in p.items() if k not in ("id", "parent", "title")},
+                    extra={k: v for k, v in p.items() if k not in ("id", "parent", "parentId", "title", "path", "children")},
                 )
             )
         return cls(cats)
 
+    @staticmethod
+    def _flatten(node: dict[str, Any], out: list[dict[str, Any]]) -> None:
+        out.append(node)
+        for child in node.get("children") or []:
+            CategoryTree._flatten(child, out)
+
+    @classmethod
+    def from_json_data(cls, data: Any) -> "CategoryTree":
+        """Принимает любой из форматов: {"pages": [...]}, {"catalog": [...]}, список, вложенное дерево с children."""
+        if isinstance(data, dict):
+            for key in ("pages", "catalog", "categories", "items"):
+                if isinstance(data.get(key), list):
+                    return cls.from_json_data(data[key])
+            if "id" in data and "children" in data:
+                flat: list[dict[str, Any]] = []
+                cls._flatten(data, flat)
+                return cls.from_pages(flat)
+            raise ValueError("Не удалось распознать формат дерева разделов")
+        if isinstance(data, list):
+            if data and isinstance(data[0], dict) and "children" in data[0]:
+                flat = []
+                for node in data:
+                    cls._flatten(node, flat)
+                return cls.from_pages(flat)
+            return cls.from_pages(data)
+        raise ValueError("Не удалось распознать формат дерева разделов")
+
     @classmethod
     def load(cls, path: str | os.PathLike[str]) -> "CategoryTree":
-        with open(path, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8-sig") as fh:
             data = json.load(fh)
-        pages = data.get("pages", data) if isinstance(data, dict) else data
-        return cls.from_pages(pages)
+        return cls.from_json_data(data)
+
+    def subtree(self, root_id: int, include_root: bool = False) -> "CategoryTree":
+        """Поддерево раздела root_id. Пути считаются от него (его собственное название не повторяется).
+
+        include_root=True оставляет и сам раздел (как корень с parent=0), чтобы товар можно было
+        отнести к нему, если подраздел не подходит.
+        """
+        if root_id not in self.nodes:
+            raise KeyError(f"Раздел id={root_id} не найден в дереве")
+        selected: list[Category] = []
+        stack = list(self.children.get(root_id, []))
+        while stack:
+            cid = stack.pop()
+            node = self.nodes[cid]
+            parent = 0 if node.parent == root_id and not include_root else node.parent
+            selected.append(Category(node.id, parent, node.title_ua, node.title_ru, dict(node.extra)))
+            stack.extend(self.children.get(cid, []))
+        if include_root:
+            root = self.nodes[root_id]
+            selected.append(Category(root.id, 0, root.title_ua, root.title_ru, dict(root.extra)))
+        return CategoryTree(selected)
+
+    def descendant_ids(self, root_id: int) -> set[int]:
+        ids: set[int] = set()
+        stack = list(self.children.get(root_id, []))
+        while stack:
+            cid = stack.pop()
+            ids.add(cid)
+            stack.extend(self.children.get(cid, []))
+        return ids
 
     def save(self, path: str | os.PathLike[str]) -> None:
         pages = [

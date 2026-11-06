@@ -81,6 +81,10 @@ def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
         tree = client.export_category_tree()
         if args.categories:
             tree.save(args.categories)
+    if args.root_id:
+        full_tree = tree
+        tree = full_tree.subtree(args.root_id, include_root=True)
+        log(f"Раздел {args.root_id} «{full_tree.nodes[args.root_id].title_ua}»: подразделов {len(tree) - 1}")
     log(f"Разделов в дереве: {len(tree)}")
 
     # Товары: из CSV/JSON (шаг export) или прямо с сайта.
@@ -89,7 +93,12 @@ def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
     else:
         if client is None:
             client = HoroshopClient.from_env(log=log)
-        rows = [flatten_product(p) for p in client.export_all_products()]
+        rows = [flatten_product(p) for p in client.export_all_products(parent_id=args.root_id or None)]
+    if args.root_id and args.input and not args.all_products and rows and "parent_id" in rows[0]:
+        allowed = {str(i) for i in full_tree.descendant_ids(args.root_id)} | {str(args.root_id), ""}
+        before = len(rows)
+        rows = [r for r in rows if str(r.get("parent_id") or "") in allowed]
+        log(f"Оставлено товаров раздела {args.root_id}: {len(rows)} из {before} (--all-products, чтобы взять все)")
     if not rows:
         log("Нет товаров для обработки")
         return 2
@@ -229,6 +238,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--categories", type=Path, default=Path("categories.json"), help="дерево разделов (если файла нет — выгрузится)")
     r.add_argument("--out", type=Path, default=Path("review.csv"))
     r.add_argument("--limit", type=int, help="обработать только первые N товаров (для пробы)")
+    r.add_argument("--root-id", type=int, help="работать только с этим разделом и его подразделами (id из дерева)")
+    r.add_argument("--all-products", action="store_true", help="с --root-id не отбрасывать товары других разделов")
     r.add_argument("--model", default=pn.DEFAULT_MODEL)
     r.add_argument("--effort", default=pn.DEFAULT_EFFORT, choices=["low", "medium", "high", "xhigh", "max"])
     r.add_argument("--batch-size", type=int, default=pn.DEFAULT_BATCH_SIZE)

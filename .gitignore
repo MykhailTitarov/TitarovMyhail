@@ -3,6 +3,5 @@ __pycache__/
 .product_names_cache.json
 *.pyc
 .env
-categories.json
 products.csv
 review.csv

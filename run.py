@@ -137,6 +137,9 @@ def action_process() -> int:
         print(f"Нет файла {PRODUCTS_FILE}. Сначала выполните пункт 2 (выгрузить товары).")
         return 2
     argv = ["process", "--in", PRODUCTS_FILE, "--categories", CATEGORIES_FILE, "--out", REVIEW_FILE]
+    root = input("ID раздела, который обрабатываем (Enter — весь каталог; подсмотреть id можно в categories.json или в пункте 1): ").strip()
+    if root.isdigit():
+        argv += ["--root-id", root]
     limit = input("Сколько товаров обработать? (Enter — все, для пробы введите например 30): ").strip()
     if limit.isdigit() and int(limit) > 0:
         argv += ["--limit", limit]

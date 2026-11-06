@@ -174,3 +174,54 @@ def test_cli_process_offline_with_categories_file(tmp_path, monkeypatch):
     assert {r["article"] for r in rows} == {"A1", "A2"}
     assert all("category_path_ru" in r and "apply" in r for r in rows)
     assert next(r for r in rows if r["article"] == "A1")["name_uk"] == "Сік sandora 1 л"
+
+
+# --------------------------------------------------------------------------- #
+# Форматы дерева и работа с одним разделом
+# --------------------------------------------------------------------------- #
+
+
+def test_tree_loads_parentid_catalog_and_nested_children(tmp_path):
+    catalog = {"catalog": [{"id": p["id"], "parentId": p["parent"], "title": p["title"], "path": {"ua": []}} for p in PAGES]}
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog, ensure_ascii=False), encoding="utf-8")
+    nested = {"id": 10, "parentId": 0, "title": PAGES[0]["title"], "children": [
+        {"id": 11, "parentId": 10, "title": PAGES[1]["title"], "children": [
+            {"id": 12, "parentId": 11, "title": PAGES[2]["title"], "children": []}]}]}
+    (tmp_path / "nested.json").write_text(json.dumps(nested, ensure_ascii=False), encoding="utf-8")
+
+    from_catalog = CategoryTree.load(tmp_path / "catalog.json")
+    from_nested = CategoryTree.load(tmp_path / "nested.json")
+    assert from_catalog.path(12) == "Напої / Соки / Яблучні"
+    assert from_nested.path(12) == "Напої / Соки / Яблучні" and len(from_nested) == 3
+    assert "children" not in from_nested.nodes[10].extra
+
+
+def test_subtree_and_descendants():
+    tree = CategoryTree.from_pages(PAGES)
+    sub = tree.subtree(10)
+    assert set(sub.nodes) == {11, 12} and sub.path(12) == "Соки / Яблучні"
+    with_root = tree.subtree(10, include_root=True)
+    assert set(with_root.nodes) == {10, 11, 12} and with_root.path(12) == "Напої / Соки / Яблучні"
+    assert tree.descendant_ids(10) == {11, 12}
+    with pytest.raises(KeyError):
+        tree.subtree(999)
+
+
+def test_cli_process_root_id_filters_products(tmp_path, monkeypatch):
+    cats = tmp_path / "categories.json"
+    CategoryTree.from_pages(PAGES).save(cats)
+    products = tmp_path / "products.csv"
+    pn.write_products(
+        [
+            {"article": "A1", "title_ua": "сік", "title_ru": "", "parent": "Напої / Соки", "parent_id": 11, "brand": "", "price": 1},
+            {"article": "A2", "title_ua": "чайник", "title_ru": "", "parent": "Техніка", "parent_id": 20, "brand": "", "price": 2},
+            {"article": "A3", "title_ua": "без розділу", "title_ru": "", "parent": "", "parent_id": "", "brand": "", "price": 3},
+        ],
+        products,
+    )
+    out = tmp_path / "review.csv"
+    monkeypatch.setattr(hs, "make_client", lambda args: pytest.fail("сайт не должен понадобиться"))
+    assert hs.main(["process", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline", "--root-id", "10"]) == 0
+    assert {r["article"] for r in pn.read_products(out)} == {"A1", "A3"}
+    assert hs.main(["process", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline", "--root-id", "10", "--all-products"]) == 0
+    assert len(pn.read_products(out)) == 3
