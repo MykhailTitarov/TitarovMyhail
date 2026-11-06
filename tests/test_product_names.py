@@ -348,3 +348,19 @@ def test_cache_key_depends_on_tree_and_web_check(tmp_path):
     pn.process_products(rows, name_col="name", category_col=None, brand_col=None,
                         client=client, cache=cache, web_check=True, log=lambda m: None)
     assert client.calls  # другой режим -> кэш не использован
+
+
+def test_read_xlsx(tmp_path):
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Артикул", "Назва", "Категорія", "Ціна"])
+    ws.append(["A1", "сік sandora 1л", "Напої", 54.9])
+    ws.append([None, None, None, None])
+    ws.append(["A2", "ВОДА моршинська 1,5л", "Напої", "28"])
+    path = tmp_path / "products.xlsx"
+    wb.save(path)
+    rows = pn.read_products(path)
+    assert len(rows) == 2 and rows[0]["Назва"] == "сік sandora 1л" and rows[0]["Ціна"] == 54.9
+    assert pn.pick_column(rows[0], None, pn.NAME_COLUMNS) == "Назва"

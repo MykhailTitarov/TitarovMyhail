@@ -135,8 +135,34 @@ CATEGORY_PROMPT = """Раскладка по категориям сайта. Н
 # --------------------------------------------------------------------------- #
 
 
+def read_xlsx(path: Path, sheet: str | None = None) -> list[dict[str, Any]]:
+    """Читает первый (или указанный) лист Excel: первая строка — заголовки."""
+    try:
+        import openpyxl
+    except ImportError as exc:  # pragma: no cover
+        raise SystemExit("Для чтения .xlsx установите пакет: pip install openpyxl") from exc
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    ws = wb[sheet] if sheet else wb.worksheets[0]
+    rows_iter = ws.iter_rows(values_only=True)
+    headers: list[str] = []
+    for first in rows_iter:
+        if first and any(c not in (None, "") for c in first):
+            headers = [str(c).strip() if c is not None else f"col{i + 1}" for i, c in enumerate(first)]
+            break
+    rows: list[dict[str, Any]] = []
+    for values in rows_iter:
+        if not values or all(c in (None, "") for c in values):
+            continue
+        row = {h: ("" if v is None else v) for h, v in zip(headers, values)}
+        rows.append(row)
+    wb.close()
+    return rows
+
+
 def read_products(path: Path, delimiter: str | None = None) -> list[dict[str, Any]]:
-    """Читает товары из CSV или JSON. Возвращает список словарей."""
+    """Читает товары из CSV, JSON или XLSX. Возвращает список словарей."""
+    if path.suffix.lower() in (".xlsx", ".xlsm"):
+        return read_xlsx(path)
     if path.suffix.lower() == ".json":
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         if isinstance(data, dict):
@@ -689,7 +715,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Пример: --sort-by category_ru,-price,name_ru"
         ),
     )
-    p.add_argument("-i", "--input", required=True, type=Path, help="входной CSV или JSON с товарами")
+    p.add_argument("-i", "--input", required=True, type=Path, help="входной CSV, JSON или XLSX с товарами")
     p.add_argument("-o", "--output", type=Path, help="выходной CSV или JSON (по умолчанию CSV в stdout)")
     p.add_argument("--name-col", help="колонка с названием (по умолчанию ищется автоматически)")
     p.add_argument("--category-col", help="колонка с категорией")
