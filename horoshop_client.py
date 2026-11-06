@@ -57,13 +57,24 @@ def urllib_transport(url: str, body: dict[str, Any], headers: dict[str, str], ti
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            raise HoroshopError("HTTP_ERROR", f"{exc.code} {exc.reason}: {raw[:300]}") from exc
+            raise HoroshopError(
+                "HTTP_ERROR",
+                f"{exc.code} {exc.reason} по адресу {url}. Сервер ответил не JSON, а страницей — "
+                f"проверьте домен сайта (HOROSHOP_DOMAIN): нужен домен самого магазина, например soundsgood.com.ua. "
+                f"Начало ответа: {_strip_html(raw)[:200]}",
+            ) from exc
     except urllib.error.URLError as exc:
-        raise HoroshopError("CONNECTION_ERROR", str(exc.reason)) from exc
+        raise HoroshopError("CONNECTION_ERROR", f"{exc.reason} (адрес {url})") from exc
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise HoroshopError("BAD_JSON", f"Ответ не является JSON: {raw[:300]}") from exc
+        raise HoroshopError("BAD_JSON", f"Ответ {url} не является JSON: {_strip_html(raw)[:200]}") from exc
+
+
+def _strip_html(text: str) -> str:
+    import re
+
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip()
 
 
 # --------------------------------------------------------------------------- #
@@ -263,10 +274,7 @@ class HoroshopClient:
         timeout: float = 120.0,
         log: Callable[[str], None] | None = None,
     ):
-        domain = domain.strip().rstrip("/")
-        if not domain.startswith(("http://", "https://")):
-            domain = "https://" + domain
-        self.base_url = domain + "/api/"
+        self.base_url = self.normalize_domain(domain) + "/api/"
         self.login = login
         self.password = password
         self.timeout = timeout
@@ -274,6 +282,23 @@ class HoroshopClient:
         self._token: str | None = None
         self._token_time = 0.0
         self.log = log or (lambda msg: None)
+
+    @staticmethod
+    def normalize_domain(domain: str) -> str:
+        """'soundsgood.com.ua', 'https://soundsgood.com.ua/admin/', 'http://www.site.ua/api' -> 'https://<host>'.
+
+        Оставляет только имя хоста: пути (/admin, /api), параметры и протокол http отбрасываются,
+        потому что API Хорошоп доступен по https://<ДОМЕН>/api/.
+        """
+        raw = domain.strip()
+        if "://" in raw:
+            raw = raw.split("://", 1)[1]
+        host = raw.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].strip().lower()
+        if "@" in host:
+            host = host.rsplit("@", 1)[1]
+        if not host:
+            raise HoroshopError("CONFIG", "Пустой домен сайта (HOROSHOP_DOMAIN)")
+        return "https://" + host
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> "HoroshopClient":
@@ -321,6 +346,12 @@ class HoroshopClient:
             message = response.get("message") if isinstance(response, dict) and response.get("message") else json.dumps(response, ensure_ascii=False)[:500]
             raise HoroshopError(status, message, result)
         return result
+
+    def check_connection(self) -> str:
+        """Пробует авторизоваться и прочитать корневые разделы. Возвращает текст для пользователя."""
+        token = self.token()
+        pages = self.export_pages(0)
+        return f"Подключение к {self.base_url} работает: токен получен ({len(token)} символов), корневых разделов: {len(pages)}"
 
     # --- категории ---------------------------------------------------------- #
 

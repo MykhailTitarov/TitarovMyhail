@@ -225,3 +225,34 @@ def test_cli_process_root_id_filters_products(tmp_path, monkeypatch):
     assert {r["article"] for r in pn.read_products(out)} == {"A1", "A3"}
     assert hs.main(["process", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline", "--root-id", "10", "--all-products"]) == 0
     assert len(pn.read_products(out)) == 3
+
+
+def test_normalize_domain_variants():
+    for raw in ["soundsgood.com.ua", "https://soundsgood.com.ua/", "http://soundsgood.com.ua/admin/",
+                "SoundsGood.com.ua/api", "https://soundsgood.com.ua/admin/?page=1"]:
+        assert HoroshopClient.normalize_domain(raw) == "https://soundsgood.com.ua", raw
+    with pytest.raises(HoroshopError):
+        HoroshopClient.normalize_domain("https://")
+
+
+def test_html_error_mentions_url_and_domain_hint(monkeypatch):
+    import urllib.error
+    import horoshop_client as hc
+
+    class FakeResp:
+        def read(self):
+            return b"<html><body><h1>405 Not Allowed</h1></body></html>"
+
+    def fake_urlopen(request, timeout=0):
+        raise urllib.error.HTTPError(request.full_url, 405, "Method Not Allowed", {}, FakeResp())
+
+    monkeypatch.setattr(hc.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(HoroshopError) as info:
+        hc.urllib_transport("https://wrong.host/api/auth/", {}, {})
+    assert "wrong.host/api/auth/" in str(info.value) and "HOROSHOP_DOMAIN" in str(info.value)
+    assert "<html>" not in str(info.value)
+
+
+def test_check_connection():
+    server = FakeHoroshop()
+    assert "работает" in make_client(server).check_connection()

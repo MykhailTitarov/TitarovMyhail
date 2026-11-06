@@ -168,6 +168,21 @@ def action_apply(dry_run: bool) -> int:
     return run_sync(argv + ["--yes"])
 
 
+def action_check_connection() -> int:
+    from horoshop_client import HoroshopClient, HoroshopError
+
+    try:
+        client = HoroshopClient.from_env(log=print)
+        print(f"Домен: {os.environ.get('HOROSHOP_DOMAIN')}  ->  {client.base_url}")
+        print(client.check_connection())
+        return 0
+    except HoroshopError as exc:
+        print(f"Не удалось подключиться: {exc}")
+        if exc.status == "ERROR":
+            print("Проверьте логин и пароль API-администратора (пункт 6).")
+        return 1
+
+
 def action_offline_demo() -> int:
     import product_names
 
@@ -184,6 +199,7 @@ MENU = """
  5. Загрузить {review} на сайт
  6. Изменить настройки (ключ, домен, логин, пароль)
  7. Проверка без ключей на примере (офлайн)
+ 8. Проверить подключение к Хорошоп (домен, логин, пароль)
  0. Выход
 """
 
@@ -207,6 +223,7 @@ def main() -> int:
         "5": lambda: action_apply(dry_run=False),
         "6": lambda: (load_settings(force_ask=True), 0)[1],
         "7": action_offline_demo,
+        "8": action_check_connection,
     }
     while True:
         print(MENU.format(cats=CATEGORIES_FILE, prods=PRODUCTS_FILE, review=REVIEW_FILE))
