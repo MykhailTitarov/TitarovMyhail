@@ -16,6 +16,8 @@ product_names.py — сортировка товаров и корректные
    затем название на украинском) с правильным порядком букв кириллицы
    (украинский алфавит: ... Г Ґ Д Е Є ... И І Ї Й ...; русский: ... Е Ё ... Ъ Ы Ь Э Ю Я).
 5. Записывает результат в CSV или JSON.
+6. По желанию: проверяет написание брендов/моделей через веб-поиск (серверный инструмент
+   web_search в Claude API) и подбирает категорию из дерева разделов сайта (например, Хорошоп).
 
 Примеры
 -------
@@ -60,7 +62,13 @@ CATEGORY_COLUMNS = ("category", "категорія", "категория", "г�
 BRAND_COLUMNS = ("brand", "бренд", "виробник", "производитель", "manufacturer")
 PRICE_COLUMNS = ("price", "ціна", "цена", "стоимость", "вартість")
 
-OUTPUT_FIELDS = ("name_uk", "name_ru", "category_uk", "category_ru", "brand", "comment")
+OUTPUT_FIELDS = (
+    "name_uk", "name_ru", "category_uk", "category_ru", "brand", "category_id", "category_path", "comment",
+)
+
+WEB_SEARCH_TOOL_TYPE = "web_search_20260209"
+DEFAULT_MAX_SEARCHES = 10  # максимум веб-поисков на один пакет товаров
+MAX_PAUSE_TURNS = 8        # сколько раз продолжать ход после stop_reason == "pause_turn"
 
 # Алфавиты для правильной сортировки кириллицы.
 UK_ALPHABET = "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"
@@ -80,6 +88,13 @@ class NamedProduct(BaseModel):
     category_uk: str = Field(description="Категория товара на украинском языке")
     category_ru: str = Field(description="Категория товара на русском языке")
     brand: str = Field(description="Бренд в оригинальном написании или пустая строка")
+    category_id: int = Field(
+        description="id раздела из переданного дерева категорий сайта (самый глубокий подходящий). "
+        "0 — если дерево не передано или подходящего раздела нет"
+    )
+    category_path: str = Field(
+        description="Полный путь выбранного раздела на украинском, как в дереве (A / B / C); пустая строка, если category_id = 0"
+    )
     comment: str = Field(
         description="Короткое замечание, если исходное название непонятно или "
         "содержит ошибку, которую нельзя исправить уверенно; иначе пустая строка"
@@ -107,6 +122,13 @@ SYSTEM_PROMPT = """Ты — редактор каталога интернет-�
 10. Категорию давай короткую (1–3 слова), в единственном или множественном числе так, как принято в каталогах: «Смартфони / Смартфоны», «Шампуні / Шампуни». Если категория задана во входных данных — используй её как подсказку и приведи к тому же стилю.
 
 Отвечай строго по заданной JSON-схеме, по одному элементу на каждый входной товар, сохраняя поле index без изменений."""
+
+WEB_CHECK_PROMPT = """Проверка написания через интернет. Тебе доступен инструмент web_search. Используй его, чтобы убедиться в точном официальном написании бренда, серии и модели (регистр, дефисы, пробелы: «Head & Shoulders», «iPhone 15 Pro Max», «Моршинська»), а также в корректных характеристиках, когда исходное название двусмысленно. Ищи только там, где есть сомнение; не трать поиск на очевидные товары (вода, хлеб, обычные позиции без бренда). Один запрос может покрыть несколько товаров одного бренда. Если поиск ничего не дал — оставь исходное написание и отметь это в comment."""
+
+CATEGORY_PROMPT = """Раскладка по категориям сайта. Ниже — дерево разделов интернет-магазина в формате «id | путь ua | путь ru». Для каждого товара выбери САМЫЙ ГЛУБОКИЙ подходящий раздел (лист дерева, подподкатегорию, если она есть) и верни его id в category_id и путь ua в category_path (точно как в дереве). Поля category_uk / category_ru заполняй названием выбранного раздела (последний элемент пути) на соответствующем языке. Не придумывай id, которых нет в дереве. Если ни один раздел не подходит уверенно — category_id = 0, category_path пустая, а в comment предложи, какой раздел стоило бы создать. Текущий раздел товара во входных данных (поле category) — только подсказка: если он явно ошибочен, выбирай правильный.
+
+Дерево разделов:
+"""
 
 # --------------------------------------------------------------------------- #
 # Вспомогательные функции: чтение/запись, очистка, сортировка
@@ -322,33 +344,50 @@ class NameCache:
 # --------------------------------------------------------------------------- #
 
 
-def build_user_message(batch: list[dict[str, str]]) -> str:
-    """Формирует текст запроса: JSON-список товаров с index/name/category/brand."""
+def build_user_message(batch: list[dict[str, str]], notes: str | None = None) -> str:
+    """Формирует текст запроса: JSON-список товаров с index/name/category/brand (+ заметки веб-проверки)."""
     payload = [
         {"index": item["index"], "name": item["name"], "category": item["category"], "brand": item["brand"]}
         for item in batch
     ]
-    return "Товары для обработки (JSON):\n" + json.dumps(payload, ensure_ascii=False, indent=1)
+    text = "Товары для обработки (JSON):\n" + json.dumps(payload, ensure_ascii=False, indent=1)
+    if notes:
+        text += "\n\nРезультаты проверки написания через интернет (учитывай их):\n" + notes
+    return text
 
 
-def call_claude(client: Any, batch: list[dict[str, str]], model: str, effort: str, use_fallback: bool) -> list[NamedProduct]:
-    """Один запрос к Claude для пакета товаров. Возвращает список NamedProduct."""
-    kwargs: dict[str, Any] = dict(
-        model=model,
-        max_tokens=16000,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": build_user_message(batch)}],
-        output_format=NamingBatch,
-        output_config={"effort": effort},
-    )
-    if use_fallback:
-        # Серверный fallback: если классификатор безопасности отклонит запрос,
-        # API сам повторит его на рекомендованной запасной модели.
-        kwargs["betas"] = [FALLBACK_BETA]
-        kwargs["fallbacks"] = "default"
+def build_system(category_tree: Any = None, web_check: bool = False) -> list[dict[str, Any]]:
+    """Системный промпт блоками: правила (+ веб-проверка) и дерево категорий. Оба блока кэшируются на стороне API."""
+    rules = SYSTEM_PROMPT
+    if web_check:
+        rules += "\n\n" + WEB_CHECK_PROMPT
+    blocks: list[dict[str, Any]] = [{"type": "text", "text": rules, "cache_control": {"type": "ephemeral"}}]
+    if category_tree is not None and len(category_tree):
+        blocks.append(
+            {
+                "type": "text",
+                "text": CATEGORY_PROMPT + category_tree.to_prompt_lines(),
+                "cache_control": {"type": "ephemeral"},
+            }
+        )
+    return blocks
 
-    response = client.beta.messages.parse(**kwargs)
 
+def web_search_tool(max_uses: int) -> dict[str, Any]:
+    return {"type": WEB_SEARCH_TOOL_TYPE, "name": "web_search", "max_uses": max_uses}
+
+
+def _raw_content(response: Any) -> list[dict[str, Any]]:
+    """Содержимое ответа в виде, пригодном для отправки обратно (без служебного parsed_output)."""
+    blocks = []
+    for block in response.content:
+        data = block.to_dict() if hasattr(block, "to_dict") else dict(block)
+        data.pop("parsed_output", None)
+        blocks.append(data)
+    return blocks
+
+
+def _check_stop(response: Any) -> None:
     if response.stop_reason == "refusal":
         details = getattr(response, "stop_details", None)
         reason = getattr(details, "explanation", None) or "без объяснения"
@@ -356,17 +395,133 @@ def call_claude(client: Any, batch: list[dict[str, str]], model: str, effort: st
     if response.stop_reason == "max_tokens":
         raise RuntimeError("Ответ обрезан по max_tokens — уменьшите --batch-size")
 
-    parsed = response.parsed_output
-    if parsed is None:
-        raise RuntimeError("Модель не вернула структурированный ответ")
 
-    expected = {item["index"] for item in batch}
-    got = {item.index for item in parsed.items}
-    if got != expected:
-        missing = sorted(expected - got)
-        extra = sorted(got - expected)
-        raise RuntimeError(f"Ответ не совпадает с запросом: нет index {missing}, лишние {extra}")
-    return parsed.items
+def _is_tools_format_conflict(exc: BaseException) -> bool:
+    """400 от API о несовместимости серверных инструментов и output_config.format."""
+    try:
+        import anthropic
+    except ImportError:  # pragma: no cover
+        return False
+    if not isinstance(exc, anthropic.BadRequestError):
+        return False
+    text = str(getattr(exc, "message", exc)).lower()
+    return ("format" in text or "structured" in text) and ("tool" in text or "web_search" in text)
+
+
+class ClaudeNamer:
+    """Обёртка над Claude API: один запрос на пакет товаров с веб-проверкой и подбором категории."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        model: str = DEFAULT_MODEL,
+        effort: str = DEFAULT_EFFORT,
+        use_fallback: bool = True,
+        web_check: bool = False,
+        max_searches: int = DEFAULT_MAX_SEARCHES,
+        category_tree: Any = None,
+        log: Callable[[str], None] = lambda msg: None,
+    ):
+        self.client = client
+        self.model = model
+        self.effort = effort
+        self.use_fallback = use_fallback
+        self.web_check = web_check
+        self.max_searches = max_searches
+        self.category_tree = category_tree
+        self.log = log
+        self.two_step = False  # включается, если API не принимает веб-поиск вместе со строгой схемой
+        self.system = build_system(category_tree, web_check)
+
+    def _common_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = dict(model=self.model, max_tokens=16000, system=self.system)
+        if self.use_fallback:
+            # Серверный fallback: если классификатор безопасности отклонит запрос,
+            # API сам повторит его на рекомендованной запасной модели.
+            kwargs["betas"] = [FALLBACK_BETA]
+            kwargs["fallbacks"] = "default"
+        return kwargs
+
+    def _run_parse(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None) -> Any:
+        """parse() с продолжением хода при pause_turn (длинные серии веб-поисков)."""
+        kwargs = self._common_kwargs()
+        kwargs.update(messages=list(messages), output_format=NamingBatch, output_config={"effort": self.effort})
+        if tools:
+            kwargs["tools"] = tools
+        for _ in range(MAX_PAUSE_TURNS + 1):
+            response = self.client.beta.messages.parse(**kwargs)
+            if response.stop_reason != "pause_turn":
+                return response
+            kwargs["messages"] = kwargs["messages"] + [{"role": "assistant", "content": _raw_content(response)}]
+        raise RuntimeError("Модель не завершила ход после нескольких продолжений (pause_turn)")
+
+    def _research_notes(self, batch: list[dict[str, str]]) -> str:
+        """Шаг 1 двухэтапного режима: свободный текст с результатами веб-проверки."""
+        kwargs = self._common_kwargs()
+        kwargs.update(
+            messages=[{"role": "user", "content": build_user_message(batch) + "\n\nПока НЕ формируй итоговые названия. Проверь через web_search спорные бренды/модели/характеристики и кратко перечисли по index, что удалось уточнить."}],
+            tools=[web_search_tool(self.max_searches)],
+            output_config={"effort": self.effort},
+        )
+        messages = kwargs["messages"]
+        for _ in range(MAX_PAUSE_TURNS + 1):
+            response = self.client.beta.messages.create(**kwargs)
+            if response.stop_reason != "pause_turn":
+                break
+            kwargs["messages"] = messages = messages + [{"role": "assistant", "content": _raw_content(response)}]
+        _check_stop(response)
+        return "\n".join(b.text for b in response.content if b.type == "text").strip()
+
+    def name_batch(self, batch: list[dict[str, str]]) -> list[NamedProduct]:
+        user = {"role": "user", "content": build_user_message(batch)}
+        if self.web_check and not self.two_step:
+            try:
+                response = self._run_parse([user], [web_search_tool(self.max_searches)])
+            except Exception as exc:  # noqa: BLE001
+                if not _is_tools_format_conflict(exc):
+                    raise
+                self.log("API не принимает web_search вместе со строгой схемой — переключаюсь на двухэтапный режим")
+                self.two_step = True
+        if self.web_check and self.two_step:
+            notes = self._research_notes(batch)
+            response = self._run_parse([{"role": "user", "content": build_user_message(batch, notes)}], None)
+        elif not self.web_check:
+            response = self._run_parse([user], None)
+
+        _check_stop(response)
+        parsed = response.parsed_output
+        if parsed is None:
+            raise RuntimeError("Модель не вернула структурированный ответ")
+
+        expected = {item["index"] for item in batch}
+        got = {item.index for item in parsed.items}
+        if got != expected:
+            missing = sorted(expected - got)
+            extra = sorted(got - expected)
+            raise RuntimeError(f"Ответ не совпадает с запросом: нет index {missing}, лишние {extra}")
+        return [self._validate_category(item) for item in parsed.items]
+
+    def _validate_category(self, item: NamedProduct) -> NamedProduct:
+        """id раздела должен существовать в дереве; иначе 0 + пометка в comment."""
+        tree = self.category_tree
+        if tree is None or not len(tree):
+            if item.category_id or item.category_path:
+                item.category_id, item.category_path = 0, ""
+            return item
+        if item.category_id and item.category_id in tree:
+            item.category_path = tree.path(item.category_id, "ua")
+            return item
+        if item.category_id:
+            note = f"модель вернула несуществующий раздел id={item.category_id}"
+            item.comment = (item.comment + "; " if item.comment else "") + note
+        item.category_id, item.category_path = 0, ""
+        return item
+
+
+def call_claude(client: Any, batch: list[dict[str, str]], model: str, effort: str, use_fallback: bool) -> list[NamedProduct]:
+    """Один запрос к Claude для пакета товаров без веб-проверки и дерева категорий (совместимость)."""
+    return ClaudeNamer(client, model=model, effort=effort, use_fallback=use_fallback).name_batch(batch)
 
 
 def make_client() -> Any:
@@ -415,6 +570,8 @@ def offline_result(item: dict[str, str]) -> dict[str, Any]:
         "category_uk": category,
         "category_ru": category,
         "brand": item["brand"].strip(),
+        "category_id": 0,
+        "category_path": "",
         "comment": "offline: название только очищено, не переведено",
     }
 
@@ -431,11 +588,22 @@ def process_products(
     workers: int = DEFAULT_WORKERS,
     offline: bool = False,
     use_fallback: bool = True,
+    web_check: bool = False,
+    max_searches: int = DEFAULT_MAX_SEARCHES,
+    category_tree: Any = None,
     cache: NameCache | None = None,
     client: Any = None,
     log: Callable[[str], None] = lambda msg: print(msg, file=sys.stderr),
 ) -> list[dict[str, Any]]:
-    """Добавляет к каждому товару поля name_uk, name_ru, category_uk, category_ru, brand, comment."""
+    """Добавляет к каждому товару поля из OUTPUT_FIELDS: названия и категории ua/ru, бренд, id раздела, комментарий.
+
+    web_check — проверять написание брендов/моделей веб-поиском (инструмент web_search Claude API).
+    category_tree — CategoryTree (horoshop_client) для подбора category_id / category_path.
+    """
+    # Ключ кэша зависит от режима: смена дерева категорий или включение веб-проверки сбрасывает кэш.
+    tree_digest = category_tree.digest() if category_tree is not None and len(category_tree) else ""
+    cache_model = f"{model}|web={int(web_check)}|tree={tree_digest}"
+
     items: list[dict[str, Any]] = []
     for i, row in enumerate(rows):
         items.append(
@@ -458,7 +626,7 @@ def process_products(
             results[item["index"]] = offline_result(item)
             continue
         if cache is not None:
-            cached = cache.get(NameCache.key(model, item["name"], item["category"], item["brand"]))
+            cached = cache.get(NameCache.key(cache_model, item["name"], item["category"], item["brand"]))
             if cached:
                 results[item["index"]] = cached
                 continue
@@ -468,10 +636,23 @@ def process_products(
         if client is None:
             client = make_client()
         batches = [pending[i : i + batch_size] for i in range(0, len(pending), batch_size)]
-        log(f"Отправляю {len(pending)} товаров в {len(batches)} запросах к {model} (из кэша: {len(items) - len(pending)})")
+        mode = []
+        if web_check:
+            mode.append("веб-проверка")
+        if tree_digest:
+            mode.append(f"категории ({len(category_tree)} разделов)")
+        log(
+            f"Отправляю {len(pending)} товаров в {len(batches)} запросах к {model}"
+            f" (из кэша: {len(items) - len(pending)}{'; ' + ', '.join(mode) if mode else ''})"
+        )
+
+        namer = ClaudeNamer(
+            client, model=model, effort=effort, use_fallback=use_fallback, web_check=web_check,
+            max_searches=max_searches, category_tree=category_tree, log=log,
+        )
 
         def run(batch: list[dict[str, Any]]) -> list[NamedProduct]:
-            return call_claude(client, batch, model, effort, use_fallback)
+            return namer.name_batch(batch)
 
         with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
             for n, (batch, outcome) in enumerate(zip(batches, pool.map(run, batches)), start=1):
@@ -480,7 +661,7 @@ def process_products(
                     results[named.index] = value
                     if cache is not None:
                         src = next(it for it in batch if it["index"] == named.index)
-                        cache.put(NameCache.key(model, src["name"], src["category"], src["brand"]), value)
+                        cache.put(NameCache.key(cache_model, src["name"], src["category"], src["brand"]), value)
                 log(f"  пакет {n}/{len(batches)} готов")
         if cache is not None:
             cache.save()
@@ -524,6 +705,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-cache", action="store_true", help="не использовать кэш")
     p.add_argument("--no-fallback", action="store_true", help="не включать серверный fallback-модели")
     p.add_argument("--offline", action="store_true", help="без API: только очистка названий и сортировка")
+    p.add_argument("--web-check", action="store_true", help="проверять написание брендов/моделей веб-поиском")
+    p.add_argument("--max-searches", type=int, default=DEFAULT_MAX_SEARCHES, help="максимум веб-поисков на пакет")
+    p.add_argument("--categories", type=Path, help="JSON с деревом разделов сайта (horoshop_sync.py categories)")
     p.add_argument("--delimiter", help="разделитель CSV (по умолчанию определяется автоматически)")
     return p
 
@@ -554,6 +738,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     cache = None if (args.no_cache or args.offline) else NameCache(args.cache)
 
+    category_tree = None
+    if args.categories:
+        from horoshop_client import CategoryTree
+
+        category_tree = CategoryTree.load(args.categories)
+
     try:
         enriched = process_products(
             rows,
@@ -566,6 +756,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             workers=args.workers,
             offline=args.offline,
             use_fallback=not args.no_fallback,
+            web_check=args.web_check,
+            max_searches=args.max_searches,
+            category_tree=category_tree,
             cache=cache,
         )
     except Exception as exc:  # noqa: BLE001 — показываем понятную причину и выходим

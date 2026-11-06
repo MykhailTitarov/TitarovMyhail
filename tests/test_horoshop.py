@@ -1,0 +1,176 @@
+"""Тесты клиента Хорошоп и CLI horoshop_sync с подменённым HTTP-транспортом."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import horoshop_sync as hs  # noqa: E402
+import product_names as pn  # noqa: E402
+from horoshop_client import CategoryTree, HoroshopClient, HoroshopError  # noqa: E402
+
+PAGES = [
+    {"id": 10, "parent": 0, "title": {"ua": "Напої", "ru": "Напитки"}},
+    {"id": 11, "parent": 10, "title": {"ua": "Соки", "ru": "Соки"}},
+    {"id": 12, "parent": 11, "title": {"ua": "Яблучні", "ru": "Яблочные"}},
+    {"id": 20, "parent": 0, "title": {"ua": "Техніка", "ru": "Техника"}},
+]
+
+
+class FakeHoroshop:
+    """Имитация сервера: auth, pages/export (всё дерево или по уровням), catalog/export, catalog/import."""
+
+    def __init__(self, pages=PAGES, nested=True, products=None, token_valid=True):
+        self.pages = pages
+        self.nested = nested
+        self.products = products or []
+        self.token_valid = token_valid
+        self.calls: list[tuple[str, dict]] = []
+        self.imported: list[dict] = []
+
+    def __call__(self, url, body, headers):
+        func = url.split("/api/")[1].strip("/")
+        self.calls.append((func, body))
+        assert headers["Content-Type"].startswith("application/json")
+        if func == "auth":
+            if body["password"] != "secret":
+                return {"status": "ERROR", "response": {"message": "Невірний логін або пароль"}}
+            return {"status": "OK", "response": {"token": "t" * 32}}
+        if body.get("token") != "t" * 32:
+            return {"status": "UNAUTHORIZED", "response": {"message": "bad token"}}
+        if func == "pages/export":
+            parent = body.get("parent", 0)
+            if self.nested:
+                pages = self.pages if parent == 0 else [p for p in self.pages if p["parent"] == parent]
+            else:
+                pages = [p for p in self.pages if p["parent"] == parent]
+            return {"status": "OK" if pages else "EMPTY", "response": {"pages": pages}}
+        if func == "catalog/export":
+            offset, limit = body["offset"], body["limit"]
+            return {"status": "OK", "response": {"products": self.products[offset : offset + limit]}}
+        if func == "catalog/import":
+            self.imported.extend(body["products"])
+            return {"status": "OK", "response": {"log": []}}
+        return {"status": "ERROR", "response": {"message": f"unknown {func}"}}
+
+
+def make_client(server: FakeHoroshop) -> HoroshopClient:
+    return HoroshopClient("myshop.com.ua", "api", "secret", transport=server)
+
+
+# --------------------------------------------------------------------------- #
+
+
+def test_auth_and_token_reuse():
+    server = FakeHoroshop()
+    client = make_client(server)
+    client.export_pages()
+    client.export_pages()
+    assert [f for f, _ in server.calls] == ["auth", "pages/export", "pages/export"]
+    assert server.calls[1][1]["token"] == "t" * 32
+    assert client.base_url == "https://myshop.com.ua/api/"
+
+
+def test_auth_failure_is_readable():
+    client = HoroshopClient("https://myshop.com.ua/", "api", "wrong", transport=FakeHoroshop())
+    with pytest.raises(HoroshopError, match="Невірний логін"):
+        client.export_pages()
+
+
+def test_category_tree_from_nested_response():
+    server = FakeHoroshop(nested=True)
+    tree = make_client(server).export_category_tree()
+    assert len(tree) == 4
+    assert [f for f, _ in server.calls].count("pages/export") == 1  # всё дерево пришло одним ответом
+    assert tree.path(12) == "Напої / Соки / Яблучні"
+    assert tree.path(12, "ru") == "Напитки / Соки / Яблочные"
+    assert tree.is_leaf(12) and not tree.is_leaf(10)
+    assert sorted(tree.leaf_ids()) == [12, 20]
+
+
+def test_category_tree_from_flat_responses_recurses():
+    server = FakeHoroshop(nested=False)
+    tree = make_client(server).export_category_tree()
+    assert len(tree) == 4
+    assert tree.path(12) == "Напої / Соки / Яблучні"
+    assert [f for f, _ in server.calls].count("pages/export") >= 4
+
+
+def test_tree_prompt_lines_save_load(tmp_path):
+    tree = CategoryTree.from_pages(PAGES)
+    lines = tree.to_prompt_lines().splitlines()
+    assert lines[0].startswith("id |")
+    assert "12 | Напої / Соки / Яблучні | Напитки / Соки / Яблочные" in lines
+    tree.save(tmp_path / "cats.json")
+    loaded = CategoryTree.load(tmp_path / "cats.json")
+    assert loaded.digest() == tree.digest()
+    assert "[12] Яблучні" in tree.pretty()
+
+
+def test_export_all_products_paginates():
+    products = [{"article": f"A{i}", "title": {"ua": f"Товар {i}", "ru": f"Товар {i}"}, "parent": {"id": 12, "path": "Напої / Соки / Яблучні"}, "brand": "B", "price": i} for i in range(7)]
+    server = FakeHoroshop(products=products)
+    rows = make_client(server).export_all_products(page_size=3)
+    assert len(rows) == 7
+    exports = [b for f, b in server.calls if f == "catalog/export"]
+    assert [(b["offset"], b["limit"]) for b in exports] == [(0, 3), (3, 3), (6, 3)]
+
+
+def test_import_products_and_payload_builder():
+    rows = [
+        {"article": "A1", "name_uk": "Сік Sandora яблучний 1 л", "name_ru": "Сок Sandora яблочный 1 л", "category_id": "12", "apply": "yes"},
+        {"article": "A2", "name_uk": "Вода", "name_ru": "Вода", "category_id": "0", "apply": "yes"},
+        {"article": "A3", "name_uk": "Пропуск", "name_ru": "Пропуск", "category_id": "12", "apply": ""},
+        {"article": "", "name_uk": "Без артикула", "name_ru": "", "category_id": "12", "apply": "yes"},
+    ]
+    payload = hs.build_import_payload(rows)
+    assert payload == [
+        {"article": "A1", "title": {"ua": "Сік Sandora яблучний 1 л", "ru": "Сок Sandora яблочный 1 л"}, "parent": {"id": 12}},
+        {"article": "A2", "title": {"ua": "Вода", "ru": "Вода"}},
+    ]
+    assert hs.build_import_payload(rows, titles=False) == [{"article": "A1", "parent": {"id": 12}}]
+
+    server = FakeHoroshop()
+    result = make_client(server).import_products(payload)
+    assert result["status"] == "OK" and server.imported == payload
+
+
+def test_cli_apply_dry_run_and_yes(tmp_path, capsys, monkeypatch):
+    review = tmp_path / "review.csv"
+    pn.write_products(
+        [{"article": "A1", "name_uk": "Сік", "name_ru": "Сок", "category_id": 12, "apply": "yes"}], review
+    )
+    assert hs.main(["apply", "--in", str(review), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert json.loads(out)[0]["article"] == "A1"
+
+    server = FakeHoroshop()
+    monkeypatch.setattr(hs, "make_client", lambda args: make_client(server))
+    assert hs.main(["apply", "--in", str(review), "--yes"]) == 0
+    assert server.imported[0]["parent"] == {"id": 12}
+
+
+def test_cli_process_offline_with_categories_file(tmp_path, monkeypatch):
+    cats = tmp_path / "categories.json"
+    CategoryTree.from_pages(PAGES).save(cats)
+    products = tmp_path / "products.csv"
+    pn.write_products(
+        [
+            {"article": "A1", "title_ua": "сік sandora 1л", "title_ru": "сок sandora 1л", "parent": "Напої / Соки", "parent_id": 11, "brand": "Sandora", "price": 50},
+            {"article": "A2", "title_ua": "ЧАЙНИК tefal 1,7л", "title_ru": "", "parent": "Техніка", "parent_id": 20, "brand": "Tefal", "price": 900},
+        ],
+        products,
+    )
+    out = tmp_path / "review.csv"
+    monkeypatch.setattr(hs, "make_client", lambda args: pytest.fail("сайт не должен понадобиться"))
+    code = hs.main(["process", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline"])
+    assert code == 0
+    rows = pn.read_products(out)
+    assert {r["article"] for r in rows} == {"A1", "A2"}
+    assert all("category_path_ru" in r and "apply" in r for r in rows)
+    assert next(r for r in rows if r["article"] == "A1")["name_uk"] == "Сік sandora 1 л"

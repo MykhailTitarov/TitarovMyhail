@@ -109,22 +109,34 @@ def test_read_json_with_ukrainian_headers():
 class FakeClient:
     """Имитирует client.beta.messages.parse: переводит названия по словарю."""
 
-    def __init__(self, translations: dict[str, tuple[str, str]], stop_reason: str = "end_turn"):
+    def __init__(self, translations: dict[str, tuple[str, str]], stop_reason: str = "end_turn", category_id: int = 0):
         self.translations = translations
         self.stop_reason = stop_reason
+        self.category_id = category_id
         self.calls: list[dict] = []
-        self.beta = SimpleNamespace(messages=SimpleNamespace(parse=self._parse))
+        self.create_calls: list[dict] = []
+        self.beta = SimpleNamespace(messages=SimpleNamespace(parse=self._parse, create=self._create))
+
+    def _create(self, **kwargs):
+        """Имитация шага веб-проверки в двухэтапном режиме: возвращает текстовые заметки."""
+        self.create_calls.append(kwargs)
+        return SimpleNamespace(stop_reason="end_turn", stop_details=None,
+                               content=[SimpleNamespace(type="text", text="index 0: бренд подтверждён")])
 
     def _parse(self, **kwargs):
         self.calls.append(kwargs)
-        payload = json.loads(kwargs["messages"][0]["content"].split("\n", 1)[1])
+        first_user = kwargs["messages"][0]["content"]
+        body = first_user.split("\n", 1)[1]
+        body = body.split("\n\nРезультаты проверки", 1)[0]
+        payload = json.loads(body)
         items = []
         for entry in payload:
             uk, ru = self.translations[entry["name"]]
             items.append(
                 pn.NamedProduct(
                     index=entry["index"], name_uk=uk, name_ru=ru,
-                    category_uk="Кат", category_ru="Кат", brand=entry["brand"], comment="",
+                    category_uk="Кат", category_ru="Кат", brand=entry["brand"],
+                    category_id=self.category_id, category_path="", comment="",
                 )
             )
         return SimpleNamespace(stop_reason=self.stop_reason, stop_details=None,
@@ -244,3 +256,95 @@ def test_cli_missing_name_column(tmp_path, capsys):
     bad.write_text("sku,qty\n1,2\n", encoding="utf-8")
     assert pn.main(["-i", str(bad), "--offline"]) == 2
     assert "--name-col" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- #
+# Веб-проверка и дерево категорий
+# --------------------------------------------------------------------------- #
+
+from horoshop_client import CategoryTree  # noqa: E402
+
+PAGES = [
+    {"id": 1, "parent": 0, "title": {"ua": "Напої", "ru": "Напитки"}},
+    {"id": 2, "parent": 1, "title": {"ua": "Соки", "ru": "Соки"}},
+    {"id": 3, "parent": 1, "title": {"ua": "Вода", "ru": "Вода"}},
+    {"id": 4, "parent": 0, "title": {"ua": "Молочні продукти", "ru": "Молочные продукты"}},
+]
+
+
+def test_web_check_adds_tool_and_single_call():
+    client = FakeClient(TRANSLATIONS)
+    pn.process_products(make_rows(), name_col="name", category_col=None, brand_col=None,
+                        client=client, web_check=True, max_searches=5, log=lambda m: None)
+    call = client.calls[0]
+    assert call["tools"] == [{"type": pn.WEB_SEARCH_TOOL_TYPE, "name": "web_search", "max_uses": 5}]
+    assert pn.WEB_CHECK_PROMPT.split(".")[0] in call["system"][0]["text"]
+    assert client.create_calls == []
+
+
+def test_web_check_falls_back_to_two_step_on_format_conflict():
+    import anthropic
+    import httpx2 as httpx
+
+    class ConflictClient(FakeClient):
+        def _parse(self, **kwargs):
+            if "tools" in kwargs:
+                request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+                response = httpx.Response(400, request=request, json={"error": {"message": "x"}})
+                raise anthropic.BadRequestError(
+                    "output_config.format is not supported together with server tools (web_search)",
+                    response=response, body=None,
+                )
+            return super()._parse(**kwargs)
+
+    client = ConflictClient(TRANSLATIONS)
+    out = pn.process_products(make_rows(), name_col="name", category_col=None, brand_col=None,
+                              client=client, web_check=True, batch_size=10, log=lambda m: None)
+    assert len(client.create_calls) == 1                      # шаг 1: веб-поиск свободным текстом
+    assert "tools" in client.create_calls[0]
+    assert "tools" not in client.calls[-1]                    # шаг 2: строгая схема без инструментов
+    assert "Результаты проверки написания" in client.calls[-1]["messages"][0]["content"]
+    assert out[0]["name_uk"] == TRANSLATIONS["сік sandora 1л"][0]
+
+
+def test_pause_turn_is_continued():
+    class PausingClient(FakeClient):
+        def _parse(self, **kwargs):
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                block = SimpleNamespace(type="server_tool_use", to_dict=lambda: {"type": "server_tool_use", "id": "x", "name": "web_search", "input": {"query": "q"}})
+                return SimpleNamespace(stop_reason="pause_turn", stop_details=None, content=[block], parsed_output=None)
+            return FakeClient._parse(self, **kwargs)
+
+    client = PausingClient(TRANSLATIONS)
+    pn.process_products(make_rows(), name_col="name", category_col=None, brand_col=None,
+                        client=client, web_check=True, log=lambda m: None)
+    second = client.calls[1]
+    assert second["messages"][1]["role"] == "assistant"
+    assert second["messages"][1]["content"][0]["type"] == "server_tool_use"
+
+
+def test_category_tree_in_system_prompt_and_validation():
+    tree = CategoryTree.from_pages(PAGES)
+    client = FakeClient(TRANSLATIONS, category_id=2)
+    out = pn.process_products(make_rows(), name_col="name", category_col=None, brand_col=None,
+                              client=client, category_tree=tree, log=lambda m: None)
+    system = client.calls[0]["system"]
+    assert len(system) == 2 and "2 | Напої / Соки | Напитки / Соки" in system[1]["text"]
+    assert all(r["category_id"] == 2 and r["category_path"] == "Напої / Соки" for r in out)
+
+    bad = FakeClient(TRANSLATIONS, category_id=99)
+    out = pn.process_products(make_rows(), name_col="name", category_col=None, brand_col=None,
+                              client=bad, category_tree=tree, log=lambda m: None)
+    assert all(r["category_id"] == 0 and "id=99" in r["comment"] for r in out)
+
+
+def test_cache_key_depends_on_tree_and_web_check(tmp_path):
+    cache = pn.NameCache(tmp_path / "c.json")
+    rows = make_rows()
+    pn.process_products(rows, name_col="name", category_col=None, brand_col=None,
+                        client=FakeClient(TRANSLATIONS), cache=cache, log=lambda m: None)
+    client = FakeClient(TRANSLATIONS)
+    pn.process_products(rows, name_col="name", category_col=None, brand_col=None,
+                        client=client, cache=cache, web_check=True, log=lambda m: None)
+    assert client.calls  # другой режим -> кэш не использован
