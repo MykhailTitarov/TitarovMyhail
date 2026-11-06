@@ -151,8 +151,128 @@ def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
     return 0
 
 
-def build_import_payload(rows: Sequence[dict[str, Any]], *, titles: bool = True, categories: bool = True) -> list[dict[str, Any]]:
-    """Строит products[] для catalog/import из строк review-файла."""
+def prepare_supplier_rows(
+    rows: list[dict[str, Any]],
+    *,
+    name_col: str,
+    article_col: str | None,
+    brand_col: str | None,
+    price_col: str | None,
+    category_col: str | None,
+) -> list[dict[str, Any]]:
+    """Приводит прайс поставщика к единым колонкам: article, source_name, brand, price, supplier_category.
+
+    Строка, где заполнено только название (нет артикула и цены), считается заголовком группы
+    и становится supplier_category для следующих за ней товаров. Товары без названия пропускаются.
+    """
+    out: list[dict[str, Any]] = []
+    group = ""
+    for row in rows:
+        name = str(row.get(name_col, "") or "").strip()
+        article = str(row.get(article_col, "") or "").strip() if article_col else ""
+        price = row.get(price_col, "") if price_col else ""
+        price_text = str(price).strip() if price not in (None, "") else ""
+        if not name:
+            continue
+        others = [str(v).strip() for k, v in row.items() if k != name_col and v not in (None, "")]
+        if (article_col or price_col) and not article and not price_text and len(others) == 0:
+            group = name
+            continue
+        out.append(
+            {
+                "article": article,
+                "source_name": name,
+                "brand": str(row.get(brand_col, "") or "").strip() if brand_col else "",
+                "price": price_text,
+                "supplier_category": (str(row.get(category_col, "") or "").strip() if category_col else "") or group,
+                **{f"src_{k}": v for k, v in row.items() if k not in (name_col, article_col, brand_col, price_col, category_col)},
+            }
+        )
+    return out
+
+
+def cmd_supplier(args: argparse.Namespace, client: HoroshopClient | None) -> int:
+    rows = pn.read_products(Path(args.input), sheet=args.sheet, header_row=args.header_row)
+    if not rows:
+        log("В файле поставщика нет строк с данными")
+        return 2
+    sample = rows[0]
+    name_col = pn.pick_column(sample, args.name_col, pn.NAME_COLUMNS)
+    if not name_col or name_col not in sample:
+        log(f"Не найдена колонка с названием. Колонки файла: {', '.join(sample)}. Укажите --name-col.")
+        return 2
+    article_col = pn.pick_column(sample, args.article_col, pn.ARTICLE_COLUMNS)
+    brand_col = pn.pick_column(sample, args.brand_col, pn.BRAND_COLUMNS)
+    price_col = pn.pick_column(sample, args.price_col, pn.PRICE_COLUMNS)
+    category_col = pn.pick_column(sample, args.category_col, pn.CATEGORY_COLUMNS)
+    log(
+        "Колонки: название=«%s», артикул=«%s», бренд=«%s», цена=«%s», категория поставщика=«%s»"
+        % (name_col, article_col or "-", brand_col or "-", price_col or "-", category_col or "-")
+    )
+    items = prepare_supplier_rows(
+        rows, name_col=name_col, article_col=article_col, brand_col=brand_col, price_col=price_col, category_col=category_col
+    )
+    log(f"Товаров в прайсе: {len(items)} (строк в файле: {len(rows)})")
+    if args.limit:
+        items = items[: args.limit]
+
+    if args.categories and Path(args.categories).exists():
+        tree = CategoryTree.load(args.categories)
+    else:
+        if client is None:
+            client = HoroshopClient.from_env(log=log)
+        tree = client.export_category_tree()
+        if args.categories:
+            tree.save(args.categories)
+    full_tree = tree
+    if args.root_id:
+        tree = full_tree.subtree(args.root_id, include_root=True)
+        log(f"Раздел {args.root_id} «{full_tree.nodes[args.root_id].title_ua}»: подразделов {len(tree) - 1}")
+
+    cache = None if args.no_cache else pn.NameCache(Path(args.cache))
+    try:
+        enriched = pn.process_products(
+            items,
+            name_col="source_name",
+            category_col="supplier_category",
+            brand_col="brand",
+            model=args.model,
+            effort=args.effort,
+            batch_size=args.batch_size,
+            workers=args.workers,
+            offline=args.offline,
+            use_fallback=not args.no_fallback,
+            web_check=args.web_check and not args.offline,
+            max_searches=args.max_searches,
+            category_tree=tree,
+            cache=cache,
+            log=log,
+        )
+    except Exception as exc:  # noqa: BLE001
+        if cache is not None:
+            cache.save()
+        log(f"Ошибка: {pn.describe_api_error(exc)}")
+        return 1
+
+    for row in enriched:
+        row["category_path_ru"] = full_tree.path(row["category_id"], "ru") if row.get("category_id") else ""
+        row["apply"] = "yes" if row.get("article") and row.get("name_uk") and row.get("category_id") else ""
+    enriched = pn.sort_products(enriched, REVIEW_SORT)
+    pn.write_products(enriched, args.out)
+    unassigned = sum(1 for r in enriched if not r.get("category_id"))
+    no_article = sum(1 for r in enriched if not r.get("article"))
+    log(f"Готово: {len(enriched)} товаров -> {args.out or 'stdout'}; без раздела: {unassigned}; без артикула: {no_article}")
+    log("Проверьте файл. Загрузка на сайт: apply --in <файл> --create (создаёт новые товары с названием, разделом, брендом и ценой).")
+    return 0
+
+
+def build_import_payload(
+    rows: Sequence[dict[str, Any]], *, titles: bool = True, categories: bool = True, create: bool = False
+) -> list[dict[str, Any]]:
+    """Строит products[] для catalog/import из строк review-файла.
+
+    create=True добавляет бренд и цену (для новых товаров из прайса поставщика) и требует раздел.
+    """
     payload: list[dict[str, Any]] = []
     for row in rows:
         if str(row.get("apply", "yes")).strip().lower() in ("", "no", "0", "false", "n"):
@@ -170,6 +290,14 @@ def build_import_payload(rows: Sequence[dict[str, Any]], *, titles: bool = True,
             product["title"] = title
         if categories and row.get("category_id") not in (None, "", 0, "0"):
             product["parent"] = {"id": int(row["category_id"])}
+        if create:
+            if "parent" not in product or "title" not in product:
+                continue  # новый товар нельзя создать без названия и раздела
+            if row.get("brand"):
+                product["brand"] = str(row["brand"]).strip()
+            price = pn.parse_price(row.get("price"))
+            if price != float("inf"):
+                product["price"] = price
         if len(product) > 1:
             payload.append(product)
     return payload
@@ -177,7 +305,7 @@ def build_import_payload(rows: Sequence[dict[str, Any]], *, titles: bool = True,
 
 def cmd_apply(args: argparse.Namespace, client: HoroshopClient | None) -> int:
     rows = pn.read_products(Path(args.input))
-    payload = build_import_payload(rows, titles=not args.no_titles, categories=not args.no_categories)
+    payload = build_import_payload(rows, titles=not args.no_titles, categories=not args.no_categories, create=args.create)
     if not payload:
         log("Нечего отправлять: нет строк с apply=yes и изменениями")
         return 2
@@ -251,6 +379,30 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-fallback", action="store_true")
     r.add_argument("--offline", action="store_true", help="без Claude: только очистка названий (категории не подбираются)")
 
+    sp = sub.add_parser("supplier", help="прайс поставщика -> названия ua/ru и разделы сайта -> review-файл")
+    sp.add_argument("--in", dest="input", required=True, help="файл поставщика: xlsx, csv или json")
+    sp.add_argument("--sheet", help="лист Excel (по умолчанию первый)")
+    sp.add_argument("--header-row", type=int, help="номер строки с заголовками, с 0 (по умолчанию ищется автоматически)")
+    sp.add_argument("--name-col", help="колонка с названием")
+    sp.add_argument("--article-col", help="колонка с артикулом")
+    sp.add_argument("--brand-col", help="колонка с брендом")
+    sp.add_argument("--price-col", help="колонка с ценой")
+    sp.add_argument("--category-col", help="колонка с категорией поставщика")
+    sp.add_argument("--categories", type=Path, default=Path("categories.json"), help="дерево разделов сайта")
+    sp.add_argument("--root-id", type=int, help="подбирать разделы только внутри этого раздела")
+    sp.add_argument("--out", type=Path, default=Path("review_supplier.csv"))
+    sp.add_argument("--limit", type=int, help="обработать только первые N товаров")
+    sp.add_argument("--model", default=pn.DEFAULT_MODEL)
+    sp.add_argument("--effort", default=pn.DEFAULT_EFFORT, choices=["low", "medium", "high", "xhigh", "max"])
+    sp.add_argument("--batch-size", type=int, default=pn.DEFAULT_BATCH_SIZE)
+    sp.add_argument("--workers", type=int, default=pn.DEFAULT_WORKERS)
+    sp.add_argument("--web-check", action="store_true", help="проверять написание брендов/моделей веб-поиском")
+    sp.add_argument("--max-searches", type=int, default=pn.DEFAULT_MAX_SEARCHES)
+    sp.add_argument("--cache", default=pn.DEFAULT_CACHE_FILE)
+    sp.add_argument("--no-cache", action="store_true")
+    sp.add_argument("--no-fallback", action="store_true")
+    sp.add_argument("--offline", action="store_true", help="без Claude: только очистка названий")
+
     a = sub.add_parser("apply", help="загрузить review-файл в Хорошоп (catalog/import)")
     a.add_argument("--in", dest="input", required=True, help="review.csv после проверки")
     a.add_argument("--dry-run", action="store_true", help="показать payload и ничего не отправлять")
@@ -259,6 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--batch-size", type=int, default=IMPORT_BATCH_SIZE)
     a.add_argument("--no-titles", action="store_true", help="не обновлять названия")
     a.add_argument("--no-categories", action="store_true", help="не менять разделы")
+    a.add_argument("--create", action="store_true", help="создавать новые товары (из прайса поставщика): + бренд и цена")
     return p
 
 
@@ -282,6 +435,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "process":
             needs_site = not args.input or not (args.categories and Path(args.categories).exists())
             return cmd_process(args, make_client(args) if needs_site else None)
+        if args.command == "supplier":
+            needs_site = not (args.categories and Path(args.categories).exists())
+            return cmd_supplier(args, make_client(args) if needs_site else None)
         if args.command == "apply":
             return cmd_apply(args, make_client(args) if args.yes and not args.dry_run else None)
     except HoroshopError as exc:

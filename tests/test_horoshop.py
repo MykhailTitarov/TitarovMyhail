@@ -256,3 +256,71 @@ def test_html_error_mentions_url_and_domain_hint(monkeypatch):
 def test_check_connection():
     server = FakeHoroshop()
     assert "работает" in make_client(server).check_connection()
+
+
+# --------------------------------------------------------------------------- #
+# Прайс поставщика
+# --------------------------------------------------------------------------- #
+
+
+def make_supplier_xlsx(path):
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["ООО Поставщик", None, None, None])          # шапка прайса
+    ws.append(["Прайс-лист от 01.11.2026", None, None, None])
+    ws.append([None, None, None, None])
+    ws.append(["Код", "Наименование", "Бренд", "Цена, грн"])  # заголовки в 4-й строке
+    ws.append([None, "Синтезаторы", None, None])             # заголовок группы
+    ws.append(["SKU-1", "синтезатор yamaha psr-e373 61 клавиша", "Yamaha", "12 990"])
+    ws.append(["SKU-2", "CASIO CT-S300 синтезатор 61кл", "Casio", 8490])
+    ws.append([None, "Цифровые пианино", None, None])         # ещё группа
+    ws.append(["SKU-3", "цифровое пианино kawai es120 чёрное", "Kawai", "39 900,00"])
+    ws.append([None, None, None, None])
+    wb.save(path)
+
+
+def test_supplier_header_detection_and_groups(tmp_path):
+    path = tmp_path / "price.xlsx"
+    make_supplier_xlsx(path)
+    rows = pn.read_products(path)
+    assert list(rows[0].keys()) == ["Код", "Наименование", "Бренд", "Цена, грн"]
+    items = hs.prepare_supplier_rows(rows, name_col="Наименование", article_col="Код", brand_col="Бренд",
+                                     price_col="Цена, грн", category_col=None)
+    assert [i["article"] for i in items] == ["SKU-1", "SKU-2", "SKU-3"]
+    assert [i["supplier_category"] for i in items] == ["Синтезаторы", "Синтезаторы", "Цифровые пианино"]
+    assert items[2]["price"] == "39 900,00" and items[1]["price"] == "8490"
+
+
+def test_cli_supplier_offline_and_create_payload(tmp_path, monkeypatch):
+    path = tmp_path / "price.xlsx"
+    make_supplier_xlsx(path)
+    cats = tmp_path / "categories.json"
+    CategoryTree.from_pages(PAGES).save(cats)
+    out = tmp_path / "review_supplier.csv"
+    monkeypatch.setattr(hs, "make_client", lambda args: pytest.fail("сайт не должен понадобиться"))
+    assert hs.main(["supplier", "--in", str(path), "--categories", str(cats), "--out", str(out), "--offline"]) == 0
+    rows = pn.read_products(out)
+    assert {r["article"] for r in rows} == {"SKU-1", "SKU-2", "SKU-3"}
+    row = next(r for r in rows if r["article"] == "SKU-2")
+    assert row["name_uk"] == "CASIO CT-S300 синтезатор 61кл" and row["supplier_category"] == "Синтезаторы"
+    assert row["apply"] == ""  # офлайн: раздел не подобран -> не отправлять
+
+    # Имитация проверенного файла: раздел проставлен, apply=yes -> payload с брендом и ценой
+    for r in rows:
+        r["category_id"] = 12
+        r["apply"] = "yes"
+    payload = hs.build_import_payload(rows, create=True)
+    assert payload[0]["parent"] == {"id": 12} and payload[0]["brand"] in ("Yamaha", "Casio", "Kawai")
+    assert all(isinstance(p["price"], float) for p in payload)
+    assert next(p for p in payload if p["article"] == "SKU-3")["price"] == 39900.0
+    # без раздела новый товар не создаётся
+    rows[0]["category_id"] = 0
+    assert len(hs.build_import_payload(rows, create=True)) == 2
+
+
+def test_detect_header_row_falls_back_to_first_nonempty():
+    raw = [[None, None], ["Шапка"], ["a", "b", "c"], [1, 2, 3]]
+    assert pn.detect_header_row(raw) == 2
+    assert pn.detect_header_row([["Артикул", "Назва", "Ціна"], [1, "x", 2]]) == 0

@@ -88,6 +88,24 @@ python horoshop_sync.py process --in products.csv --root-id 1256 --out review_ke
 Файл дерева может быть в любом из форматов: `{"pages": [...]}` из pages/export, `{"catalog": [...]}` с `parentId`,
 список или вложенное дерево с `children`.
 
+## Прайс поставщика: новые товары с правильными названиями и разделами
+
+Для файла поставщика (xlsx/csv) есть отдельная команда. Она сама находит строку с заголовками (даже если выше
+шапка с реквизитами), определяет колонки с названием, артикулом, брендом, ценой и категорией, понимает строки-заголовки
+групп внутри таблицы («Синтезатори», «Цифрові піаніно» и т.п.) и использует их как подсказку для раздела.
+
+```bash
+python horoshop_sync.py supplier --in price.xlsx --root-id 1256 --web-check --out review_supplier.csv
+python horoshop_sync.py apply --in review_supplier.csv --create --dry-run   # что будет создано
+python horoshop_sync.py apply --in review_supplier.csv --create --yes       # создать товары на сайте
+```
+
+В меню `run.py` это пункты 9 и 10. Колонки можно задать вручную: `--name-col`, `--article-col`, `--brand-col`,
+`--price-col`, `--category-col`, лист Excel — `--sheet`, строку заголовков — `--header-row`.
+Результат `review_supplier.csv` отсортирован по разделу и названию; `apply --create` создаёт товар с артикулом,
+названиями ua/ru, разделом, брендом и ценой, но только для строк с `apply=yes`, у которых подобран раздел.
+Пример прайса: `examples/supplier_price_sample.xlsx`.
+
 ## Самостоятельное использование product_names.py
 
 ```bash

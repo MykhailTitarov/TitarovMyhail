@@ -154,6 +154,42 @@ def action_process() -> int:
     return code
 
 
+SUPPLIER_REVIEW_FILE = "review_supplier.csv"
+
+
+def action_supplier() -> int:
+    path = input("Путь к файлу поставщика (xlsx/csv), можно перетащить файл в окно: ").strip().strip('"')
+    if not path or not Path(path).exists():
+        print("Файл не найден.")
+        return 2
+    argv = ["supplier", "--in", path, "--categories", CATEGORIES_FILE, "--out", SUPPLIER_REVIEW_FILE]
+    root = input("ID раздела сайта, куда раскладываем (Enter — весь каталог): ").strip()
+    if root.isdigit():
+        argv += ["--root-id", root]
+    limit = input("Сколько товаров обработать? (Enter — все, для пробы например 30): ").strip()
+    if limit.isdigit() and int(limit) > 0:
+        argv += ["--limit", limit]
+    if ask_yes("Проверять написание брендов и моделей через интернет?", default=True):
+        argv.append("--web-check")
+    code = run_sync(argv)
+    if code == 0:
+        print(f"\nОткройте {SUPPLIER_REVIEW_FILE}, проверьте названия и разделы. Загрузка на сайт — пункт 10.")
+    return code
+
+
+def action_apply_supplier() -> int:
+    if not Path(SUPPLIER_REVIEW_FILE).exists():
+        print(f"Нет файла {SUPPLIER_REVIEW_FILE}. Сначала выполните пункт 9.")
+        return 2
+    argv = ["apply", "--in", SUPPLIER_REVIEW_FILE, "--create"]
+    run_sync(argv + ["--dry-run"])
+    print("ВНИМАНИЕ: на сайте будут созданы новые товары по файлу review_supplier.csv (строки с apply=yes).")
+    if not ask_yes("Отправить на сайт?"):
+        print("Отменено.")
+        return 0
+    return run_sync(argv + ["--yes"])
+
+
 def action_apply(dry_run: bool) -> int:
     if not Path(REVIEW_FILE).exists():
         print(f"Нет файла {REVIEW_FILE}. Сначала выполните пункт 3.")
@@ -200,6 +236,8 @@ MENU = """
  6. Изменить настройки (ключ, домен, логин, пароль)
  7. Проверка без ключей на примере (офлайн)
  8. Проверить подключение к Хорошоп (домен, логин, пароль)
+ 9. Прайс поставщика -> названия UA/RU и разделы сайта -> review_supplier.csv
+10. Загрузить review_supplier.csv на сайт (создать новые товары)
  0. Выход
 """
 
@@ -224,6 +262,8 @@ def main() -> int:
         "6": lambda: (load_settings(force_ask=True), 0)[1],
         "7": action_offline_demo,
         "8": action_check_connection,
+        "9": action_supplier,
+        "10": action_apply_supplier,
     }
     while True:
         print(MENU.format(cats=CATEGORIES_FILE, prods=PRODUCTS_FILE, review=REVIEW_FILE))

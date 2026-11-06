@@ -57,7 +57,8 @@ DEFAULT_CACHE_FILE = ".product_names_cache.json"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # Колонки входного файла, в которых скрипт ищет данные, если не задано явно.
-NAME_COLUMNS = ("name", "title", "product", "назва", "название", "наименование", "товар")
+NAME_COLUMNS = ("name", "title", "product", "назва", "название", "наименование", "товар", "найменування", "модель", "model")
+ARTICLE_COLUMNS = ("article", "артикул", "sku", "код", "code", "код товара", "код товару", "art", "арт", "арт.")
 CATEGORY_COLUMNS = ("category", "категорія", "категория", "група", "группа", "раздел", "розділ")
 BRAND_COLUMNS = ("brand", "бренд", "виробник", "производитель", "manufacturer")
 PRICE_COLUMNS = ("price", "ціна", "цена", "стоимость", "вартість")
@@ -135,34 +136,71 @@ CATEGORY_PROMPT = """Раскладка по категориям сайта. Н
 # --------------------------------------------------------------------------- #
 
 
-def read_xlsx(path: Path, sheet: str | None = None) -> list[dict[str, Any]]:
-    """Читает первый (или указанный) лист Excel: первая строка — заголовки."""
+HEADER_HINTS = NAME_COLUMNS + CATEGORY_COLUMNS + BRAND_COLUMNS + PRICE_COLUMNS + (
+    "артикул", "article", "sku", "код", "code", "наличие", "наявність", "кількість", "количество", "qty",
+)
+
+
+def detect_header_row(raw_rows: list[list[Any]], max_scan: int = 30) -> int:
+    """Ищет строку с заголовками: первая из верхних строк, где ≥2 ячеек и есть знакомое название колонки.
+
+    У прайсов поставщиков заголовки часто идут после шапки с логотипом и контактами.
+    """
+    best, best_score = 0, -1
+    for i, row in enumerate(raw_rows[:max_scan]):
+        cells = [str(c).strip().lower() for c in row if c not in (None, "")]
+        if len(cells) < 2:
+            continue
+        score = sum(1 for c in cells if any(h == c or h in c for h in HEADER_HINTS))
+        if score > best_score:
+            best, best_score = i, score
+        if score >= 2:
+            return i
+    return best
+
+
+def _rows_to_dicts(raw_rows: list[list[Any]], header_row: int) -> list[dict[str, Any]]:
+    header = raw_rows[header_row] if header_row < len(raw_rows) else []
+    headers = [str(c).strip() if c not in (None, "") else f"col{i + 1}" for i, c in enumerate(header)]
+    # Дубликаты заголовков -> уникальные имена
+    seen: dict[str, int] = {}
+    for i, h in enumerate(headers):
+        seen[h] = seen.get(h, 0) + 1
+        if seen[h] > 1:
+            headers[i] = f"{h}_{seen[h]}"
+    rows: list[dict[str, Any]] = []
+    for values in raw_rows[header_row + 1 :]:
+        if not values or all(c in (None, "") for c in values):
+            continue
+        row = {h: ("" if v is None else v) for h, v in zip(headers, values)}
+        rows.append(row)
+    return rows
+
+
+def read_xlsx(path: Path, sheet: str | None = None, header_row: int | None = None) -> list[dict[str, Any]]:
+    """Читает лист Excel. header_row — номер строки с заголовками (с 0); None — определить автоматически."""
     try:
         import openpyxl
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("Для чтения .xlsx установите пакет: pip install openpyxl") from exc
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = wb[sheet] if sheet else wb.worksheets[0]
-    rows_iter = ws.iter_rows(values_only=True)
-    headers: list[str] = []
-    for first in rows_iter:
-        if first and any(c not in (None, "") for c in first):
-            headers = [str(c).strip() if c is not None else f"col{i + 1}" for i, c in enumerate(first)]
-            break
-    rows: list[dict[str, Any]] = []
-    for values in rows_iter:
-        if not values or all(c in (None, "") for c in values):
-            continue
-        row = {h: ("" if v is None else v) for h, v in zip(headers, values)}
-        rows.append(row)
+    raw_rows = [list(r) for r in ws.iter_rows(values_only=True)]
     wb.close()
-    return rows
+    if header_row is None:
+        header_row = detect_header_row(raw_rows)
+    return _rows_to_dicts(raw_rows, header_row)
 
 
-def read_products(path: Path, delimiter: str | None = None) -> list[dict[str, Any]]:
-    """Читает товары из CSV, JSON или XLSX. Возвращает список словарей."""
+def read_products(
+    path: Path, delimiter: str | None = None, sheet: str | None = None, header_row: int | None = None
+) -> list[dict[str, Any]]:
+    """Читает товары из CSV, JSON или XLSX. Возвращает список словарей.
+
+    header_row задаёт строку заголовков для CSV/XLSX (с 0); для прайсов поставщиков по умолчанию ищется автоматически.
+    """
     if path.suffix.lower() in (".xlsx", ".xlsm"):
-        return read_xlsx(path)
+        return read_xlsx(path, sheet, header_row)
     if path.suffix.lower() == ".json":
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         if isinstance(data, dict):
@@ -181,6 +219,9 @@ def read_products(path: Path, delimiter: str | None = None) -> list[dict[str, An
             delimiter = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|").delimiter
         except csv.Error:
             delimiter = ","
+    if header_row is not None:
+        raw_rows = [list(r) for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
+        return _rows_to_dicts(raw_rows, header_row)
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
     return [dict(row) for row in reader]
 
