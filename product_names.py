@@ -260,6 +260,12 @@ def pick_column(row: dict[str, Any], explicit: str | None, candidates: Iterable[
     for cand in candidates:
         if cand in lowered:
             return lowered[cand]
+    # Нестрогое совпадение: «Цена, грн», «Наименование товара», «Артикул поставщика»
+    for cand in candidates:
+        for low, original in lowered.items():
+            words = re.split(r"[^\wа-яёіїєґ]+", low)
+            if low.startswith(cand) or cand in words:
+                return original
     return None
 
 
