@@ -2,3 +2,7 @@ __pycache__/
 .pytest_cache/
 .product_names_cache.json
 *.pyc
+.env
+categories.json
+products.csv
+review.csv
