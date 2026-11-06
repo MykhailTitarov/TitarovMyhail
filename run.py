@@ -19,7 +19,6 @@ run.py — запуск всего конвейера через меню, бе�
 
 from __future__ import annotations
 
-import getpass
 import os
 import sys
 from pathlib import Path
@@ -70,15 +69,23 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
 
 
 def ask_settings(current: dict[str, str]) -> dict[str, str]:
-    print("\nВведите настройки. Enter — оставить текущее значение.\n")
+    print("\nВведите настройки и нажимайте Enter. Вставка: Ctrl+V или правая кнопка мыши.")
+    print("Вводимый текст виден на экране. Enter без ввода — оставить текущее значение.\n")
     values = dict(current)
     for key, hint, secret in SETTINGS:
-        shown = ("*" * 8 if values.get(key) else "не задано") if secret else (values.get(key) or "не задано")
-        prompt = f"{hint}\n  [{shown}]: "
-        entered = getpass.getpass(prompt) if secret else input(prompt)
-        entered = entered.strip()
-        if entered:
-            values[key] = entered
+        current_value = values.get(key, "")
+        if secret and current_value:
+            shown = current_value[:6] + "…" + current_value[-3:] if len(current_value) > 12 else "*" * len(current_value)
+        else:
+            shown = current_value or "не задано"
+        while True:
+            entered = input(f"{hint}\n  [{shown}]: ").strip()
+            if entered:
+                values[key] = entered
+                break
+            if current_value:
+                break
+            print("  Значение пустое. Введите его или нажмите Ctrl+C для выхода.")
     return values
 
 
