@@ -14,5 +14,6 @@ if not defined PY (
 )
 echo Использую: %PY%
 %PY% -m pip install -q -r requirements.txt
-%PY% run.py
+echo Запускаю оболочку, сейчас откроется браузер. Это окно не закрывайте, пока работаете.
+%PY% app.py
 pause

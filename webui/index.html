@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Товары: названия и разделы</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --line:#dde1e7; --text:#1f2430; --muted:#6b7280; --accent:#2563eb; --ok:#15803d; --bad:#b91c1c; --warn:#b45309; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:#111827; color:#fff; padding:14px 24px; display:flex; align-items:center; gap:18px; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .status { margin-left:auto; font-size:13px; color:#cbd5e1; }
+  nav { display:flex; gap:4px; padding:10px 24px 0; background:#111827; }
+  nav button { background:#1f2937; color:#e5e7eb; border:0; padding:10px 16px; border-radius:8px 8px 0 0; cursor:pointer; font-size:14px; }
+  nav button.active { background:var(--bg); color:var(--text); font-weight:600; }
+  main { padding:20px 24px 40px; max-width:1200px; margin:0 auto; }
+  .tab { display:none; } .tab.active { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 12px; font-size:16px; }
+  .step { display:flex; gap:12px; align-items:flex-start; }
+  .num { flex:0 0 28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:12px 18px; align-items:center; margin:8px 0; }
+  label { font-size:14px; color:var(--muted); display:block; margin-bottom:3px; }
+  input[type=text], input[type=password], input[type=number], select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; min-width:220px; background:#fff; }
+  input[type=number] { min-width:90px; width:110px; }
+  button.btn { background:var(--accent); color:#fff; border:0; padding:9px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+  button.btn.secondary { background:#e5e7eb; color:var(--text); }
+  button.btn.danger { background:var(--bad); }
+  button.btn:disabled { opacity:.5; cursor:default; }
+  .hint { color:var(--muted); font-size:13px; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  #log { background:#0b1020; color:#d1d5db; font:13px/1.4 ui-monospace, Consolas, monospace; padding:12px; border-radius:10px; height:260px; overflow:auto; white-space:pre-wrap; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#f1f3f6; position:sticky; top:0; }
+  .tablewrap { max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:8px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; font-size:12px; margin-left:6px; }
+  .catsearch { position:relative; }
+  .catlist { position:absolute; z-index:5; background:#fff; border:1px solid var(--line); border-radius:8px; max-height:260px; overflow:auto; width:560px; display:none; box-shadow:0 8px 24px rgba(0,0,0,.12); }
+  .catlist div { padding:6px 10px; cursor:pointer; font-size:13px; } .catlist div:hover { background:#eef2ff; }
+  .tree div { font-size:13px; padding:2px 0; }
+  .muted { color:var(--muted); }
+  @media (max-width: 720px) { main { padding:12px; } input[type=text], select { min-width:160px; width:100%; } .catlist { width:95vw; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Товары: названия UA/RU и разделы сайта</h1>
+  <div class="status" id="jobstatus">готов</div>
+</header>
+<nav>
+  <button data-tab="site" class="active">Товары сайта</button>
+  <button data-tab="supplier">Прайс поставщика</button>
+  <button data-tab="cats">Разделы</button>
+  <button data-tab="settings">Настройки</button>
+</nav>
+<main>
+
+<!-- ============================ Товары сайта ============================ -->
+<section class="tab active" id="tab-site">
+  <div class="card">
+    <div class="step"><div class="num">1</div><div style="flex:1">
+      <h2>Откуда брать товары</h2>
+      <div class="row">
+        <input type="file" id="site-file" accept=".xlsx,.xlsm,.csv,.json">
+        <button class="btn secondary" onclick="uploadFile('products')">Загрузить файл</button>
+        <span class="hint">выгрузка из админпанели Хорошоп (Товары → Экспорт → xlsx) или products.csv</span>
+      </div>
+      <div class="row">
+        <button class="btn secondary" onclick="runJob('export', {})">Выгрузить товары с сайта через API → products.csv</button>
+        <span class="hint" id="site-file-info"></span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">2</div><div style="flex:1">
+      <h2>Что обрабатывать</h2>
+      <div class="row">
+        <div><label>Поставщик</label><select id="site-supplier"><option value="">все поставщики</option></select></div>
+        <div><label>Раздел сайта</label><div class="catsearch"><input type="text" id="site-cat" placeholder="начните вводить название раздела или id" autocomplete="off"><div class="catlist" id="site-catlist"></div></div></div>
+        <div><label>Сколько товаров (проба)</label><input type="number" id="site-limit" value="30" min="0"></div>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="site-visible" checked> только товары с «Отображать = Да»</label>
+        <label><input type="checkbox" id="site-web" checked> проверять написание брендов и моделей через интернет</label>
+        <div><label style="display:inline">Глубина модели</label> <select id="site-effort" style="min-width:110px"><option>low</option><option selected>medium</option><option>high</option></select></div>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="runProcess()">Обработать через Claude → review.csv</button>
+        <span class="hint">Пустое поле количества = все товары выбранного поставщика/раздела.</span>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">3</div><div style="flex:1">
+      <h2>Проверка результата <span class="pill" id="review-stats"></span></h2>
+      <div class="row">
+        <button class="btn secondary" onclick="loadReview('review.csv','review-table','review-stats')">Показать review.csv</button>
+        <a class="btn secondary" style="text-decoration:none" href="/download?file=review.csv">Скачать review.csv</a>
+        <span class="hint">Галочка «на сайт» в таблице = колонка apply. Снимите её у строк, которые не нужно отправлять.</span>
+      </div>
+      <div class="tablewrap"><table id="review-table"></table></div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">4</div><div style="flex:1">
+      <h2>Загрузка на сайт</h2>
+      <div class="row">
+        <button class="btn secondary" onclick="runJob('apply', {file:'review.csv', confirm:false})">Показать, что будет отправлено</button>
+        <button class="btn danger" onclick="confirmApply('review.csv', false)">Загрузить названия и разделы на сайт</button>
+      </div>
+      <div class="hint">Обновляются название UA, название RU и раздел у товаров с apply = yes. Перед отправкой будет запрошено подтверждение.</div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============================ Прайс поставщика ============================ -->
+<section class="tab" id="tab-supplier">
+  <div class="card">
+    <div class="step"><div class="num">1</div><div style="flex:1">
+      <h2>Файл поставщика</h2>
+      <div class="row">
+        <input type="file" id="sup-file" accept=".xlsx,.xlsm,.csv">
+        <button class="btn secondary" onclick="uploadFile('supplier')">Загрузить прайс</button>
+        <span class="hint" id="sup-file-info"></span>
+      </div>
+      <div id="sup-cols" class="row" style="display:none">
+        <div><label>Колонка названия</label><select id="sup-name"></select></div>
+        <div><label>Артикул</label><select id="sup-article"></select></div>
+        <div><label>Бренд</label><select id="sup-brand"></select></div>
+        <div><label>Цена</label><select id="sup-price"></select></div>
+        <div><label>Категория поставщика</label><select id="sup-category"></select></div>
+      </div>
+      <div class="tablewrap" id="sup-preview-wrap" style="display:none; max-height:200px"><table id="sup-preview"></table></div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">2</div><div style="flex:1">
+      <h2>Куда раскладывать и как</h2>
+      <div class="row">
+        <div><label>Раздел сайта</label><div class="catsearch"><input type="text" id="sup-cat" placeholder="например 1256 — Клавішні інструменти" autocomplete="off"><div class="catlist" id="sup-catlist"></div></div></div>
+        <div><label>Сколько товаров (проба)</label><input type="number" id="sup-limit" value="30" min="0"></div>
+        <label><input type="checkbox" id="sup-web" checked> веб-проверка написания</label>
+      </div>
+      <div class="row"><button class="btn" onclick="runSupplier()">Обработать через Claude → review_supplier.csv</button></div>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="step"><div class="num">3</div><div style="flex:1">
+      <h2>Проверка и создание товаров <span class="pill" id="sreview-stats"></span></h2>
+      <div class="row">
+        <button class="btn secondary" onclick="loadReview('review_supplier.csv','sreview-table','sreview-stats')">Показать review_supplier.csv</button>
+        <a class="btn secondary" style="text-decoration:none" href="/download?file=review_supplier.csv">Скачать</a>
+        <button class="btn secondary" onclick="runJob('apply', {file:'review_supplier.csv', create:true, confirm:false})">Показать, что будет создано</button>
+        <button class="btn danger" onclick="confirmApply('review_supplier.csv', true)">Создать товары на сайте</button>
+      </div>
+      <div class="tablewrap"><table id="sreview-table"></table></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============================ Разделы ============================ -->
+<section class="tab" id="tab-cats">
+  <div class="card">
+    <h2>Дерево разделов сайта <span class="pill" id="cats-count"></span></h2>
+    <div class="row">
+      <button class="btn secondary" onclick="runJob('categories', {})">Обновить дерево с сайта (API)</button>
+      <input type="text" id="cats-filter" placeholder="фильтр по названию или id" oninput="renderTree()">
+      <span class="hint">серым отмечены разделы, которых нет на сайте (скрыты или пустые)</span>
+    </div>
+    <div class="tree" id="tree" style="max-height:600px; overflow:auto"></div>
+  </div>
+</section>
+
+<!-- ============================ Настройки ============================ -->
+<section class="tab" id="tab-settings">
+  <div class="card">
+    <h2>Доступы</h2>
+    <div id="settings-form"></div>
+    <div class="row">
+      <button class="btn" onclick="saveSettings()">Сохранить</button>
+      <button class="btn secondary" onclick="check('claude')">Проверить ключ Claude</button>
+      <button class="btn secondary" onclick="check('horoshop')">Проверить подключение к Хорошоп</button>
+      <span id="check-result"></span>
+    </div>
+    <div class="hint">Сохраняется в файл .env рядом со скриптом. Пустое поле оставляет прежнее значение.</div>
+  </div>
+</section>
+
+<div class="card">
+  <h2>Журнал выполнения <span class="muted" id="job-title"></span></h2>
+  <div id="log"></div>
+</div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let CATS = [], logSince = 0, polling = null, siteFilePath = '', supFilePath = '';
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); $('tab-' + b.dataset.tab).classList.add('active');
+});
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+// ---------------- состояние / настройки ----------------
+async function loadState() {
+  const st = await api('/api/state');
+  renderSettings(st.settings);
+  if (st.files['review.csv']) loadReview('review.csv', 'review-table', 'review-stats');
+  if (st.files['review_supplier.csv']) loadReview('review_supplier.csv', 'sreview-table', 'sreview-stats');
+  if (st.job.running) startPolling();
+}
+function renderSettings(items) {
+  $('settings-form').innerHTML = items.map(s => `
+    <div class="row"><div style="flex:1">
+      <label>${s.hint}</label>
+      <input type="${s.secret ? 'password' : 'text'}" id="set-${s.key}" placeholder="${s.set ? 'сохранено: ' + s.value : 'не задано'}" style="width:100%">
+    </div></div>`).join('');
+}
+async function saveSettings() {
+  const data = {};
+  document.querySelectorAll('[id^=set-]').forEach(i => data[i.id.slice(4)] = i.value);
+  const r = await api('/api/settings', {method:'POST', body: JSON.stringify(data)});
+  renderSettings(r.settings); flash('check-result', 'Сохранено', true);
+}
+async function check(kind) {
+  flash('check-result', 'проверяю…', null);
+  const r = await api('/api/check/' + kind, {method:'POST'});
+  flash('check-result', r.message, r.ok);
+}
+function flash(id, text, ok) { const el = $(id); el.textContent = text; el.className = ok === null ? 'muted' : (ok ? 'ok' : 'bad'); }
+
+// ---------------- загрузка файлов ----------------
+async function uploadFile(kind) {
+  const input = $(kind === 'products' ? 'site-file' : 'sup-file');
+  const info = $(kind === 'products' ? 'site-file-info' : 'sup-file-info');
+  if (!input.files.length) { info.textContent = 'Сначала выберите файл.'; return; }
+  info.textContent = 'загружаю и разбираю файл…';
+  const fd = new FormData(); fd.append('kind', kind); fd.append('file', input.files[0]);
+  const r = await api('/api/upload', {method:'POST', body: fd});
+  if (r.error) { info.textContent = 'Ошибка: ' + r.error; return; }
+  if (kind === 'products') {
+    siteFilePath = r.path;
+    info.textContent = `${input.files[0].name}: ${r.rows} товаров` + (r.admin_export ? ', выгрузка из админпанели' : '');
+    const sel = $('site-supplier'); sel.innerHTML = '<option value="">все поставщики</option>';
+    (r.suppliers || []).forEach(s => { const o = document.createElement('option'); o.value = s.name; o.textContent = `${s.name} — ${s.count} (отобр. ${s.visible})`; sel.appendChild(o); });
+  } else {
+    supFilePath = r.path;
+    info.textContent = `${input.files[0].name}: ${r.rows} строк`;
+    $('sup-cols').style.display = 'flex';
+    for (const k of ['name','article','brand','price','category']) {
+      const sel = $('sup-' + k); sel.innerHTML = '<option value="">—</option>';
+      r.columns.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; if (r.detected[k] === c) o.selected = true; sel.appendChild(o); });
+    }
+    const t = $('sup-preview'); const cols = r.columns;
+    t.innerHTML = '<tr>' + cols.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>' + r.preview.map(row => '<tr>' + cols.map(c => `<td>${esc(row[c] || '')}</td>`).join('') + '</tr>').join('');
+    $('sup-preview-wrap').style.display = 'block';
+  }
+}
+
+// ---------------- разделы ----------------
+async function loadCats() {
+  CATS = await api('/api/categories');
+  $('cats-count').textContent = CATS.length ? CATS.length + ' разделов' : 'нет файла categories.json';
+  renderTree();
+}
+function renderTree() {
+  const f = ($('cats-filter').value || '').toLowerCase();
+  const items = CATS.filter(c => !f || c.path.toLowerCase().includes(f) || String(c.id) === f).slice(0, 2000);
+  $('tree').innerHTML = items.map(c => `<div style="padding-left:${c.level * 18}px" class="${c.on_site === false ? 'muted' : ''}">[${c.id}] ${esc(c.title)}</div>`).join('');
+}
+function setupCatSearch(inputId, listId) {
+  const input = $(inputId), list = $(listId);
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { list.style.display = 'none'; return; }
+    const items = CATS.filter(c => c.path.toLowerCase().includes(q) || String(c.id).startsWith(q)).slice(0, 40);
+    list.innerHTML = items.map(c => `<div data-id="${c.id}">[${c.id}] ${esc(c.path)}</div>`).join('') || '<div class="muted">ничего не найдено</div>';
+    list.style.display = 'block';
+    list.querySelectorAll('div[data-id]').forEach(d => d.onclick = () => { input.value = d.dataset.id + ' — ' + d.textContent.replace(/^\[\d+\]\s*/, ''); input.dataset.id = d.dataset.id; list.style.display = 'none'; });
+  });
+  input.addEventListener('blur', () => setTimeout(() => list.style.display = 'none', 200));
+}
+function catId(inputId) { const v = $(inputId).value.trim(); if (!v) return ''; const m = v.match(/^(\d+)/); return m ? m[1] : ($(inputId).dataset.id || ''); }
+
+// ---------------- задачи ----------------
+async function runJob(command, params) {
+  const r = await api('/api/run', {method:'POST', body: JSON.stringify({command, params})});
+  if (!r.ok) { alert(r.error || 'не удалось запустить'); return; }
+  logSince = 0; $('log').textContent = ''; startPolling();
+}
+function runProcess() {
+  const limit = $('site-limit').value;
+  const params = {input: siteFilePath || undefined, supplier: $('site-supplier').value, root_id: catId('site-cat'),
+                  limit, only_visible: $('site-visible').checked, web_check: $('site-web').checked, effort: $('site-effort').value};
+  if (!params.input) params.input = 'products.csv';
+  if (!limit && !params.supplier && !params.root_id && !confirm('Без ограничения, поставщика и раздела будут обработаны ВСЕ товары файла. Продолжить?')) return;
+  runJob('process', params);
+}
+function runSupplier() {
+  if (!supFilePath) { alert('Сначала загрузите прайс поставщика.'); return; }
+  const params = {input: supFilePath, root_id: catId('sup-cat'), limit: $('sup-limit').value, web_check: $('sup-web').checked,
+                  name_col: $('sup-name').value, article_col: $('sup-article').value, brand_col: $('sup-brand').value,
+                  price_col: $('sup-price').value, category_col: $('sup-category').value};
+  runJob('supplier', params);
+}
+function confirmApply(file, create) {
+  const what = create ? 'СОЗДАНЫ новые товары' : 'ИЗМЕНЕНЫ названия и разделы товаров';
+  const typed = prompt(`На сайте будут ${what} по файлу ${file} (строки с apply = yes).\nЧтобы подтвердить, введите слово ДА`);
+  if (typed && typed.trim().toUpperCase() === 'ДА') runJob('apply', {file, create, confirm: true});
+}
+function startPolling() { if (polling) return; polling = setInterval(pollJob, 1000); pollJob(); }
+async function pollJob() {
+  const j = await api('/api/job?since=' + logSince);
+  if (j.lines.length) { $('log').textContent += j.lines.join('\n') + '\n'; $('log').scrollTop = $('log').scrollHeight; logSince = j.total; }
+  $('job-title').textContent = j.title ? '— ' + j.title : '';
+  $('jobstatus').textContent = j.running ? 'выполняется: ' + j.title : (j.exit_code === null ? 'готов' : (j.exit_code === 0 ? 'готово' : 'завершено с ошибкой'));
+  if (!j.running) { clearInterval(polling); polling = null; if (j.exit_code === 0) { loadReview('review.csv','review-table','review-stats'); loadReview('review_supplier.csv','sreview-table','sreview-stats'); loadCats(); } }
+}
+
+// ---------------- review ----------------
+async function loadReview(file, tableId, statsId) {
+  const r = await api('/api/review?file=' + encodeURIComponent(file));
+  const t = $(tableId);
+  if (!r.exists) { t.innerHTML = ''; $(statsId).textContent = 'файла ещё нет'; return; }
+  $(statsId).textContent = `${r.rows} товаров, без раздела ${r.unassigned}, на сайт пойдут ${r.to_apply}`;
+  const cols = r.columns.filter(c => c !== 'apply');
+  t.innerHTML = '<tr><th>на сайт</th>' + cols.map(c => `<th>${esc(label(c))}</th>`).join('') + '</tr>' +
+    r.preview.map(row => `<tr><td><input type="checkbox" ${row.apply === 'yes' ? 'checked' : ''} onchange="toggleApply('${file}','${esc(row.article)}',this.checked)"></td>` +
+      cols.map(c => `<td>${esc(row[c] || '')}</td>`).join('') + '</tr>').join('');
+  if (r.rows > r.preview.length) t.innerHTML += `<tr><td colspan="${cols.length + 1}" class="muted">показаны первые ${r.preview.length} из ${r.rows}; полный файл — по кнопке «Скачать»</td></tr>`;
+}
+async function toggleApply(file, article, on) { await api('/api/review/apply_flags', {method:'POST', body: JSON.stringify({file, articles:[article], value: on ? 'yes' : ''})}); }
+function label(c) { return ({article:'артикул', source_name:'исходное', title_ua:'было (UA)', name_uk:'новое UA', name_ru:'новое RU', category_path:'раздел', category_changed:'раздел изменён', supplier:'поставщик', price:'цена', comment:'комментарий'})[c] || c; }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+setupCatSearch('site-cat', 'site-catlist'); setupCatSearch('sup-cat', 'sup-catlist');
+loadState(); loadCats();
+</script>
+</body>
+</html>
