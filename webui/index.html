@@ -287,7 +287,7 @@ function setupCatSearch(inputId, listId) {
     const q = input.value.trim().toLowerCase();
     if (!q) { list.style.display = 'none'; return; }
     const items = CATS.filter(c => c.path.toLowerCase().includes(q) || String(c.id).startsWith(q)).slice(0, 40);
-    list.innerHTML = items.map(c => `<div data-id="${c.id}">[${c.id}] ${esc(c.path)}</div>`).join('') || '<div class="muted">ничего не найдено</div>';
+    list.innerHTML = items.map(c => `<div data-id="${c.id}">[${c.id}] ${esc(c.short || c.path)}</div>`).join('') || '<div class="muted">ничего не найдено</div>';
     list.style.display = 'block';
     list.querySelectorAll('div[data-id]').forEach(d => d.onclick = () => { input.value = d.dataset.id + ' — ' + d.textContent.replace(/^\[\d+\]\s*/, ''); input.dataset.id = d.dataset.id; list.style.display = 'none'; });
   });

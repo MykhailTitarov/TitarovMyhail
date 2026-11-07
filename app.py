@@ -188,7 +188,11 @@ def categories_list() -> list[dict[str, Any]]:
     tree = CategoryTree.load(CATEGORIES_FILE)
     out = []
     for cat, level in tree.walk():
-        out.append({"id": cat.id, "level": level, "title": cat.title_ua, "path": tree.path(cat.id, "ua"),
+        path = tree.path(cat.id, "ua")
+        parts = path.split(" / ")
+        # Короткий путь без служебных верхних уровней (главная страница сайта, «Каталог ...»)
+        short = " / ".join(parts[2:]) if level >= 2 else path
+        out.append({"id": cat.id, "level": level, "title": cat.title_ua, "path": path, "short": short,
                     "leaf": tree.is_leaf(cat.id), "on_site": cat.extra.get("on_site")})
     return out
 
