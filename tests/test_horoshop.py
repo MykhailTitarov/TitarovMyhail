@@ -382,3 +382,18 @@ def test_cli_process_admin_export_with_supplier_and_root(tmp_path, monkeypatch):
     assert {r["article"] for r in rows} == {"A1", "A3"}          # A2: другой поставщик и другой раздел
     assert {r["parent_id"] for r in rows} == {"12", "11"}         # путь раздела сопоставлен с id (и с лишним «Каталог/»)
     assert hs.main(["suppliers", "--in", str(products)]) == 0
+
+
+def test_cli_supplier_handles_admin_export(tmp_path, monkeypatch):
+    cats = tmp_path / "categories.json"
+    CategoryTree.from_pages(PAGES).save(cats)
+    products = tmp_path / "export.csv"
+    pn.write_products(ADMIN_ROWS, products)
+    out = tmp_path / "review_supplier.csv"
+    monkeypatch.setattr(hs, "make_client", lambda args: pytest.fail("сайт не должен понадобиться"))
+    code = hs.main(["supplier", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline",
+                    "--supplier", "Thomann"])
+    assert code == 0
+    rows = pn.read_products(out)
+    assert [r["article"] for r in rows] == ["A1"]
+    assert rows[0]["source_name"] == "сік sandora 1л" and rows[0]["supplier_category"] == "Напої/Соки/Яблучні"

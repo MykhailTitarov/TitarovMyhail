@@ -175,6 +175,9 @@ def action_process() -> int:
     effort = input("Глубина работы модели: low / medium / high (Enter — medium): ").strip().lower()
     if effort in ("low", "medium", "high", "xhigh", "max"):
         argv += ["--effort", effort]
+    if not (supplier or root.isdigit()) and not confirm_big_run(products, limit):
+        print("Отменено.")
+        return 0
     code = run_sync(argv)
     if code == 0:
         print(f"\nОткройте {REVIEW_FILE} в Excel, проверьте названия и разделы, затем пункты 4 и 5.")
@@ -184,12 +187,45 @@ def action_process() -> int:
 SUPPLIER_REVIEW_FILE = "review_supplier.csv"
 
 
+BIG_RUN_THRESHOLD = 300
+
+
+def confirm_big_run(path: str, limit: str) -> bool:
+    """Перед отправкой большого файла в Claude показывает объём и просит подтверждение."""
+    if limit.isdigit() and int(limit) > 0:
+        return True
+    try:
+        import horoshop_sync
+
+        n = len(horoshop_sync.load_product_rows(Path(path)))
+    except Exception:  # noqa: BLE001
+        return True
+    if n <= BIG_RUN_THRESHOLD:
+        return True
+    print(f"\nВ файле {n} товаров: это примерно {n // 20 + 1} запросов к Claude, с веб-проверкой — заметные расходы и время.")
+    print("Совет: сначала попробуйте 30–50 товаров, затем ограничьте поставщика и раздел.")
+    return ask_yes("Всё равно обработать весь файл?")
+
+
 def action_supplier() -> int:
     path = input("Путь к файлу поставщика (xlsx/csv), можно перетащить файл в окно: ").strip().strip('"')
     if not path or not Path(path).exists():
         print("Файл не найден.")
         return 2
     argv = ["supplier", "--in", path, "--categories", CATEGORIES_FILE, "--out", SUPPLIER_REVIEW_FILE]
+    try:
+        import horoshop_sync
+
+        first = horoshop_sync.load_product_rows(Path(path))[:1]
+        if first and "supplier" in first[0]:
+            print("Это выгрузка из админпанели Хорошоп, а не прайс поставщика: для неё удобнее пункт 3 с выбором поставщика.")
+            supplier = choose_supplier(path)
+            if supplier:
+                argv += ["--supplier", supplier]
+            if ask_yes("Брать только товары с «Отображать = Да»?", default=True):
+                argv.append("--only-visible")
+    except Exception:  # noqa: BLE001
+        pass
     root = input("ID раздела сайта, куда раскладываем (Enter — весь каталог): ").strip()
     if root.isdigit():
         argv += ["--root-id", root]
@@ -198,6 +234,9 @@ def action_supplier() -> int:
         argv += ["--limit", limit]
     if ask_yes("Проверять написание брендов и моделей через интернет?", default=True):
         argv.append("--web-check")
+    if not confirm_big_run(path, limit):
+        print("Отменено.")
+        return 0
     code = run_sync(argv)
     if code == 0:
         print(f"\nОткройте {SUPPLIER_REVIEW_FILE}, проверьте названия и разделы. Загрузка на сайт — пункт 10.")

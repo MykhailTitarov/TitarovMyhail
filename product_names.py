@@ -257,14 +257,20 @@ def pick_column(row: dict[str, Any], explicit: str | None, candidates: Iterable[
     if explicit:
         return explicit
     lowered = {k.strip().lower(): k for k in row}
+    candidates = tuple(candidates)
+    # 1) точное совпадение; 2) заголовок начинается с кандидата («Название (UA)», «Цена, грн»);
+    # 3) кандидат — отдельное слово в заголовке («Артикул поставщика»). Порядок проходов важен:
+    # иначе «HTML title (UA)» перехватит «title» раньше, чем найдётся «Название (UA)».
     for cand in candidates:
         if cand in lowered:
             return lowered[cand]
-    # Нестрогое совпадение: «Цена, грн», «Наименование товара», «Артикул поставщика»
     for cand in candidates:
         for low, original in lowered.items():
-            words = re.split(r"[^\wа-яёіїєґ]+", low)
-            if low.startswith(cand) or cand in words:
+            if low.startswith(cand):
+                return original
+    for cand in candidates:
+        for low, original in lowered.items():
+            if cand in re.split(r"[^\wа-яёіїєґ]+", low):
                 return original
     return None
 
@@ -603,6 +609,9 @@ def make_client() -> Any:
         import anthropic
     except ImportError as exc:  # pragma: no cover
         raise SystemExit("Не установлен пакет anthropic: pip install -r requirements.txt") from exc
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key and key != key.strip().strip("\"'"):
+        os.environ["ANTHROPIC_API_KEY"] = key.strip().strip("\"'")  # убираем случайные пробелы/кавычки из .env
     return anthropic.Anthropic()
 
 
@@ -613,7 +622,10 @@ def describe_api_error(exc: BaseException) -> str:
     except ImportError:  # pragma: no cover
         return str(exc)
     if isinstance(exc, anthropic.AuthenticationError):
-        return "неверный или отсутствующий API-ключ (ANTHROPIC_API_KEY)"
+        return ("API отклонил ключ ANTHROPIC_API_KEY (401). Проверьте, что ключ скопирован целиком, без пробелов и кавычек, "
+                "и что он активен на platform.claude.com -> API Keys")
+    if isinstance(exc, TypeError) and "authentication" in str(exc).lower():
+        return "ключ API не задан: укажите ANTHROPIC_API_KEY (в меню — пункт 6)"
     if isinstance(exc, anthropic.NotFoundError):
         return f"модель не найдена: {exc.message}"
     if isinstance(exc, anthropic.RateLimitError):

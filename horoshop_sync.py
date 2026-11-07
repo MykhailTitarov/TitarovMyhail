@@ -287,6 +287,14 @@ def cmd_supplier(args: argparse.Namespace, client: HoroshopClient | None) -> int
     if not rows:
         log("В файле поставщика нет строк с данными")
         return 2
+    if is_admin_export(rows[0]):
+        # Это выгрузка из админпанели Хорошоп, а не прайс поставщика: берём её родные колонки.
+        log("Файл распознан как выгрузка из админпанели Хорошоп: название = «Название (UA)», раздел = «Раздел», поставщик = «Поставщик»")
+        rows = normalize_admin_export(rows)
+        for r in rows:
+            r["name"] = r.get("title_ua") or r.get("title_ru") or ""
+        rows = filter_rows(rows, supplier=args.supplier, only_visible=args.only_visible)
+        args.name_col, args.article_col, args.brand_col, args.price_col, args.category_col = "name", "article", "brand", "price", "parent"
     sample = rows[0]
     name_col = pn.pick_column(sample, args.name_col, pn.NAME_COLUMNS)
     if not name_col or name_col not in sample:
@@ -484,6 +492,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--brand-col", help="колонка с брендом")
     sp.add_argument("--price-col", help="колонка с ценой")
     sp.add_argument("--category-col", help="колонка с категорией поставщика")
+    sp.add_argument("--supplier", help="если файл — выгрузка админпанели: только товары этого поставщика")
+    sp.add_argument("--only-visible", action="store_true", help="если файл — выгрузка админпанели: только «Отображать = Да»")
     sp.add_argument("--categories", type=Path, default=Path("categories.json"), help="дерево разделов сайта")
     sp.add_argument("--root-id", type=int, help="подбирать разделы только внутри этого раздела")
     sp.add_argument("--out", type=Path, default=Path("review_supplier.csv"))

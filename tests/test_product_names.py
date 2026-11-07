@@ -364,3 +364,10 @@ def test_read_xlsx(tmp_path):
     rows = pn.read_products(path)
     assert len(rows) == 2 and rows[0]["Назва"] == "сік sandora 1л" and rows[0]["Ціна"] == 54.9
     assert pn.pick_column(rows[0], None, pn.NAME_COLUMNS) == "Назва"
+
+
+def test_pick_column_prefers_startswith_over_word_match():
+    row = {"Артикул": 1, "HTML title (UA)": 1, "Название (UA)": 1, "Название (RU)": 1, "Старая цена": 1, "Цена": 1}
+    assert pn.pick_column(row, None, pn.NAME_COLUMNS) == "Название (UA)"
+    assert pn.pick_column(row, None, pn.PRICE_COLUMNS) == "Цена"
+    assert pn.pick_column({"Код": 1, "Наименование товара": 1, "Цена, грн": 1}, None, pn.NAME_COLUMNS) == "Наименование товара"
