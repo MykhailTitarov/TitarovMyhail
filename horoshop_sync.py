@@ -71,6 +71,86 @@ def cmd_export(args: argparse.Namespace, client: HoroshopClient) -> int:
     return 0
 
 
+# Выгрузка товаров из админпанели Хорошоп (Товары -> Экспорт -> xlsx): колонки на русском.
+ADMIN_EXPORT_MAP = {
+    "article": "Артикул",
+    "parent_article": "Родительский артикул",
+    "title_ua": "Название (UA)",
+    "title_ru": "Название (RU)",
+    "mod_title_ua": "Название модификации (UA)",
+    "mod_title_ru": "Название модификации (RU)",
+    "brand": "Бренд",
+    "parent": "Раздел",
+    "price": "Цена",
+    "currency": "Валюта",
+    "display_in_showcase": "Отображать",
+    "presence": "Наявність",
+    "supplier": "Поставщик",
+    "link": "Ссылка",
+}
+
+
+def is_admin_export(row: dict[str, Any]) -> bool:
+    return "Артикул" in row and ("Название (UA)" in row or "Название (RU)" in row)
+
+
+def normalize_admin_export(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Приводит выгрузку админпанели к колонкам, которые ждёт конвейер (как flatten_product)."""
+    out = []
+    for row in rows:
+        rec = {key: ("" if row.get(src) is None else str(row.get(src)).strip()) for key, src in ADMIN_EXPORT_MAP.items()}
+        rec["display_in_showcase"] = 1 if rec["display_in_showcase"].lower() in ("да", "так", "1", "yes", "true") else 0
+        rec["parent_id"] = ""
+        out.append(rec)
+    return out
+
+
+def load_product_rows(path: Path) -> list[dict[str, Any]]:
+    rows = pn.read_products(path)
+    if rows and is_admin_export(rows[0]):
+        rows = normalize_admin_export(rows)
+    return rows
+
+
+def supplier_matches(value: Any, wanted: str) -> bool:
+    """--supplier: список через запятую, без учёта регистра; '(пусто)' или '-' — товары без поставщика."""
+    v = str(value or "").strip().lower()
+    for w in (x.strip().lower() for x in wanted.split(",") if x.strip()):
+        if w in ("(пусто)", "-", "none", "пусто") and not v:
+            return True
+        if v == w or (len(w) >= 3 and w in v):
+            return True
+    return False
+
+
+def filter_rows(rows: list[dict[str, Any]], *, supplier: str | None, only_visible: bool) -> list[dict[str, Any]]:
+    before = len(rows)
+    if supplier:
+        rows = [r for r in rows if supplier_matches(r.get("supplier"), supplier)]
+        log(f"Поставщик «{supplier}»: {len(rows)} из {before}")
+    if only_visible and rows and "display_in_showcase" in rows[0]:
+        n = len(rows)
+        rows = [r for r in rows if str(r.get("display_in_showcase", "1")) in ("1", "True", "true", "Да", "да")]
+        log(f"Только отображаемые: {len(rows)} из {n}")
+    return rows
+
+
+def cmd_suppliers(args: argparse.Namespace, client: HoroshopClient | None) -> int:
+    from collections import Counter
+
+    rows = load_product_rows(Path(args.input))
+    if not rows or "supplier" not in rows[0]:
+        log("В файле нет колонки поставщика")
+        return 2
+    counts = Counter((str(r.get("supplier") or "").strip() or "(пусто)") for r in rows)
+    visible = Counter((str(r.get("supplier") or "").strip() or "(пусто)") for r in rows if str(r.get("display_in_showcase", "1")) in ("1", "Да"))
+    print(f"{'Поставщик':35} {'товаров':>8} {'отображ.':>8}")
+    for name, n in counts.most_common():
+        print(f"{name:35} {n:8} {visible.get(name, 0):8}")
+    print(f"{'ВСЕГО':35} {len(rows):8}")
+    return 0
+
+
 def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
     # Дерево категорий: из файла или прямо с сайта.
     if args.categories and Path(args.categories).exists():
@@ -87,13 +167,23 @@ def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
         log(f"Раздел {args.root_id} «{full_tree.nodes[args.root_id].title_ua}»: подразделов {len(tree) - 1}")
     log(f"Разделов в дереве: {len(tree)}")
 
-    # Товары: из CSV/JSON (шаг export) или прямо с сайта.
+    # Товары: из CSV/JSON/XLSX (шаг export или выгрузка админпанели) или прямо с сайта.
     if args.input:
-        rows = pn.read_products(Path(args.input))
+        rows = load_product_rows(Path(args.input))
     else:
         if client is None:
             client = HoroshopClient.from_env(log=log)
         rows = [flatten_product(p) for p in client.export_all_products(parent_id=args.root_id or None)]
+    rows = filter_rows(rows, supplier=args.supplier, only_visible=args.only_visible)
+    # В выгрузке админпанели раздел задан путём, а не id: восстанавливаем id по дереву.
+    if rows and "parent" in rows[0] and not any(str(r.get("parent_id") or "") for r in rows):
+        unresolved = 0
+        for r in rows:
+            cid = full_tree.resolve_path(r.get("parent"))
+            r["parent_id"] = cid if cid else ""
+            unresolved += 0 if cid or not str(r.get("parent") or "").strip() else 1
+        if unresolved:
+            log(f"Не удалось сопоставить путь раздела с деревом у {unresolved} товаров")
     if args.root_id and args.input and not args.all_products and rows and "parent_id" in rows[0]:
         allowed = {str(i) for i in full_tree.descendant_ids(args.root_id)} | {str(args.root_id), ""}
         before = len(rows)
@@ -108,8 +198,9 @@ def cmd_process(args: argparse.Namespace, client: HoroshopClient | None) -> int:
     # Исходное название: украинское, если есть, иначе русское, иначе колонка по умолчанию.
     for row in rows:
         row["_source_name"] = (row.get("title_ua") or row.get("title_ru") or row.get("title") or row.get("name") or "")
-        if row.get("mod_title_ua") or row.get("mod_title_ru"):
-            row["_source_name"] = f"{row['_source_name']} {row.get('mod_title_ua') or row.get('mod_title_ru')}".strip()
+        mod = str(row.get("mod_title_ua") or row.get("mod_title_ru") or "").strip()
+        if mod and mod.lower() not in str(row["_source_name"]).lower():
+            row["_source_name"] = f"{row['_source_name']} {mod}".strip()
 
     cache = None if args.no_cache else pn.NameCache(Path(args.cache))
     try:
@@ -367,6 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--out", type=Path, default=Path("review.csv"))
     r.add_argument("--limit", type=int, help="обработать только первые N товаров (для пробы)")
     r.add_argument("--root-id", type=int, help="работать только с этим разделом и его подразделами (id из дерева)")
+    r.add_argument("--supplier", help="только товары этого поставщика (можно несколько через запятую; '(пусто)' — без поставщика)")
+    r.add_argument("--only-visible", action="store_true", help="только товары с «Отображать = Да»")
     r.add_argument("--all-products", action="store_true", help="с --root-id не отбрасывать товары других разделов")
     r.add_argument("--model", default=pn.DEFAULT_MODEL)
     r.add_argument("--effort", default=pn.DEFAULT_EFFORT, choices=["low", "medium", "high", "xhigh", "max"])
@@ -378,6 +471,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--no-cache", action="store_true")
     r.add_argument("--no-fallback", action="store_true")
     r.add_argument("--offline", action="store_true", help="без Claude: только очистка названий (категории не подбираются)")
+
+    su = sub.add_parser("suppliers", help="список поставщиков в файле товаров с количеством позиций")
+    su.add_argument("--in", dest="input", required=True, help="products.csv или выгрузка админпанели (xlsx)")
 
     sp = sub.add_parser("supplier", help="прайс поставщика -> названия ua/ru и разделы сайта -> review-файл")
     sp.add_argument("--in", dest="input", required=True, help="файл поставщика: xlsx, csv или json")
@@ -435,6 +531,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "process":
             needs_site = not args.input or not (args.categories and Path(args.categories).exists())
             return cmd_process(args, make_client(args) if needs_site else None)
+        if args.command == "suppliers":
+            return cmd_suppliers(args, None)
         if args.command == "supplier":
             needs_site = not (args.categories and Path(args.categories).exists())
             return cmd_supplier(args, make_client(args) if needs_site else None)

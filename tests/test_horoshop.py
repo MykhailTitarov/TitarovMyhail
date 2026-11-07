@@ -324,3 +324,61 @@ def test_detect_header_row_falls_back_to_first_nonempty():
     raw = [[None, None], ["Шапка"], ["a", "b", "c"], [1, 2, 3]]
     assert pn.detect_header_row(raw) == 2
     assert pn.detect_header_row([["Артикул", "Назва", "Ціна"], [1, "x", 2]]) == 0
+
+
+# --------------------------------------------------------------------------- #
+# Выгрузка админпанели, поставщики, путь раздела -> id
+# --------------------------------------------------------------------------- #
+
+ADMIN_ROWS = [
+    {"Артикул": "A1", "Родительский артикул": "A1", "Название модификации (UA)": "", "Название модификации (RU)": "",
+     "Название (UA)": "сік sandora 1л", "Название (RU)": "сок sandora 1л", "Бренд": "Sandora", "Раздел": "Напої/Соки/Яблучні",
+     "Цена": "54.90", "Валюта": "UAH", "Отображать": "Да", "Наявність": "В наявності", "Поставщик": "Thomann", "Ссылка": "https://x/a1"},
+    {"Артикул": "A2", "Родительский артикул": "A2", "Название модификации (UA)": "", "Название модификации (RU)": "",
+     "Название (UA)": "чайник", "Название (RU)": "", "Бренд": "Tefal", "Раздел": "Техніка", "Цена": "900", "Валюта": "UAH",
+     "Отображать": "Нет", "Наявність": "Немає", "Поставщик": "Komora", "Ссылка": ""},
+    {"Артикул": "A3", "Родительский артикул": "A3", "Название модификации (UA)": "", "Название модификации (RU)": "",
+     "Название (UA)": "сік", "Название (RU)": "", "Бренд": "", "Раздел": "Каталог/Напої/Соки", "Цена": "20", "Валюта": "UAH",
+     "Отображать": "Да", "Наявність": "В наявності", "Поставщик": "", "Ссылка": ""},
+]
+
+
+def test_admin_export_is_recognized_and_normalized():
+    assert hs.is_admin_export(ADMIN_ROWS[0])
+    rows = hs.normalize_admin_export(ADMIN_ROWS)
+    assert rows[0]["title_ua"] == "сік sandora 1л" and rows[0]["supplier"] == "Thomann" and rows[0]["parent"] == "Напої/Соки/Яблучні"
+    assert rows[0]["display_in_showcase"] == 1 and rows[1]["display_in_showcase"] == 0
+
+
+def test_supplier_filter_and_visibility():
+    rows = hs.normalize_admin_export(ADMIN_ROWS)
+    assert [r["article"] for r in hs.filter_rows(rows, supplier="thomann", only_visible=False)] == ["A1"]
+    assert [r["article"] for r in hs.filter_rows(rows, supplier="Thomann, Komora", only_visible=False)] == ["A1", "A2"]
+    assert [r["article"] for r in hs.filter_rows(rows, supplier="(пусто)", only_visible=False)] == ["A3"]
+    assert [r["article"] for r in hs.filter_rows(rows, supplier=None, only_visible=True)] == ["A1", "A3"]
+
+
+def test_resolve_path_variants():
+    tree = CategoryTree.from_pages([{"id": 1, "parent": 0, "title": {"ua": "Каталог", "ru": "Каталог"}}] +
+                                   [dict(p, parent=(1 if p["parent"] == 0 else p["parent"])) for p in PAGES])
+    assert tree.resolve_path("Напої/Соки/Яблучні") == 12
+    assert tree.resolve_path("Каталог/Напої/Соки/Яблучні") == 12
+    assert tree.resolve_path("напої / соки") == 11
+    assert tree.resolve_path("Немає такого") is None
+    assert tree.resolve_path("") is None
+
+
+def test_cli_process_admin_export_with_supplier_and_root(tmp_path, monkeypatch):
+    cats = tmp_path / "categories.json"
+    CategoryTree.from_pages(PAGES).save(cats)
+    products = tmp_path / "export.csv"
+    pn.write_products(ADMIN_ROWS, products)
+    out = tmp_path / "review.csv"
+    monkeypatch.setattr(hs, "make_client", lambda args: pytest.fail("сайт не должен понадобиться"))
+    code = hs.main(["process", "--in", str(products), "--categories", str(cats), "--out", str(out), "--offline",
+                    "--root-id", "10", "--supplier", "Thomann,(пусто)"])
+    assert code == 0
+    rows = pn.read_products(out)
+    assert {r["article"] for r in rows} == {"A1", "A3"}          # A2: другой поставщик и другой раздел
+    assert {r["parent_id"] for r in rows} == {"12", "11"}         # путь раздела сопоставлен с id (и с лишним «Каталог/»)
+    assert hs.main(["suppliers", "--in", str(products)]) == 0

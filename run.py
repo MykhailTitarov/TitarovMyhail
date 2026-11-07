@@ -132,11 +132,38 @@ def action_export() -> int:
     return run_sync(["export", "--out", PRODUCTS_FILE])
 
 
+def choose_supplier(products_path: str) -> str | None:
+    """Показывает поставщиков из файла и даёт выбрать одного (номер или название)."""
+    from collections import Counter
+
+    import horoshop_sync
+
+    rows = horoshop_sync.load_product_rows(Path(products_path))
+    if not rows or "supplier" not in rows[0]:
+        return None
+    counts = Counter((str(r.get("supplier") or "").strip() or "(пусто)") for r in rows).most_common()
+    print("\nПоставщики в файле:")
+    for i, (name, n) in enumerate(counts, 1):
+        print(f" {i:2}. {name:35} {n:6} товаров")
+    answer = input("Номер или название поставщика (Enter — все поставщики): ").strip()
+    if not answer:
+        return None
+    if answer.isdigit() and 1 <= int(answer) <= len(counts):
+        return counts[int(answer) - 1][0]
+    return answer
+
+
 def action_process() -> int:
-    if not Path(PRODUCTS_FILE).exists():
-        print(f"Нет файла {PRODUCTS_FILE}. Сначала выполните пункт 2 (выгрузить товары).")
+    products = input(f"Файл с товарами: products.csv из пункта 2 или выгрузка из админпанели (xlsx) [Enter — {PRODUCTS_FILE}]: ").strip().strip('"') or PRODUCTS_FILE
+    if not Path(products).exists():
+        print(f"Нет файла {products}. Выполните пункт 2 или укажите путь к выгрузке из админпанели.")
         return 2
-    argv = ["process", "--in", PRODUCTS_FILE, "--categories", CATEGORIES_FILE, "--out", REVIEW_FILE]
+    argv = ["process", "--in", products, "--categories", CATEGORIES_FILE, "--out", REVIEW_FILE]
+    supplier = choose_supplier(products)
+    if supplier:
+        argv += ["--supplier", supplier]
+    if ask_yes("Брать только товары с «Отображать = Да»?", default=True):
+        argv.append("--only-visible")
     root = input("ID раздела, который обрабатываем (Enter — весь каталог; подсмотреть id можно в categories.json или в пункте 1): ").strip()
     if root.isdigit():
         argv += ["--root-id", root]

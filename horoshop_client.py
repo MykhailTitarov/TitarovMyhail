@@ -240,6 +240,50 @@ class CategoryTree:
             yield self.nodes[cid], level
             yield from self.walk(cid, level + 1)
 
+    @staticmethod
+    def _norm_path(text: str) -> str:
+        """Нормализация пути: регистр, пробелы вокруг «/», разные апострофы, обратные слэши."""
+        import re
+
+        t = str(text or "").replace("\\", "/")
+        t = re.sub(r"[\u2019\u2018\u02bc`´]", "'", t)
+        t = re.sub(r"\s*/\s*", "/", t)
+        t = re.sub(r"\s+", " ", t).strip().strip("/").lower()
+        return t
+
+    def _path_index(self) -> dict[str, int | None]:
+        """Карта «путь -> id» для путей вида 'A/B/C' (ua), с вариантами без 1–2 верхних уровней (сайт, каталог)."""
+        cached = getattr(self, "_path_idx", None)
+        if cached is not None:
+            return cached
+        idx: dict[str, int | None] = {}
+        for cid in self.nodes:
+            parts = self.path(cid, "ua", sep="\x00").split("\x00")
+            for cut in range(0, min(3, len(parts))):
+                key = self._norm_path("/".join(parts[cut:]))
+                if not key:
+                    continue
+                idx[key] = cid if key not in idx or idx[key] == cid else None  # None = неоднозначно
+        self._path_idx = idx
+        return idx
+
+    def resolve_path(self, text: Any) -> int | None:
+        """id раздела по текстовому пути из выгрузки ('Гітари/Електрогітари').
+
+        Пробует путь целиком, затем без верхних уровней (если в выгрузке есть «Каталог/...»).
+        None, если не найден или неоднозначен.
+        """
+        key = self._norm_path(text)
+        if not key:
+            return None
+        idx = self._path_index()
+        parts = key.split("/")
+        for cut in range(0, min(3, len(parts))):
+            cid = idx.get("/".join(parts[cut:]))
+            if cid:
+                return cid
+        return None
+
     def digest(self) -> str:
         """Хэш структуры — входит в ключ кэша, чтобы смена категорий сбрасывала кэш."""
         raw = json.dumps(
